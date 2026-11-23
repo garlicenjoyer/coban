@@ -35,9 +35,10 @@ import { ARTIFACTS, Economy, GOODS, HERBS, JOBS, MUSEUM_LORE, RUMOURS, UPGRADES,
 import { isThursday, season } from './economy/calendar';
 import type { TradeRequest } from './core/input';
 import { DAY4, FREE_DAY } from './tasks/day4';
-import { Residents } from './life/residents';
+import { Residents, type Resident } from './life/residents';
 import { Wildlife, wildlifeNames } from './life/wildlife';
 import { Errands, type ErrandTarget } from './life/errands';
+import type { DialogueChoice, DialogueOption, ResidentDialogue, ResidentGesture } from './life/dialogue';
 
 /** Interact presses within this distance of the gate toggle it. */
 export const GATE_REACH = 2.5;
@@ -106,6 +107,7 @@ export class Sim {
   residents!: Residents;
   wildlife!: Wildlife;
   errands!: Errands;
+  dialogue: ResidentDialogue | null = null;
   private hornTime = 0;
   private observed: { animal: Wildlife['animals'][number]; until: number } | null = null;
   tasks!: TaskSystem;
@@ -207,6 +209,7 @@ export class Sim {
     this.residents = new Residents(activeMap().residents ?? [], this.terrain, this.obstacles, this.events);
     this.wildlife = new Wildlife(activeMap(), this.terrain, this.obstacles, this.events);
     this.errands = new Errands(activeMap().errands ?? []);
+    this.dialogue = null;
     this.hornTime = 0;
     this.observed = null;
     const bs = layout.bikeSpawn;
@@ -571,6 +574,7 @@ export class Sim {
 
   /** Start a day's tasks from the current world, at the next morning. */
   startDay(day: number): void {
+    this.closeDialogue();
     if (this.nightProbe) this.wolves.retire(this.nightProbe);
     this.tasks.dispose();
     const plan = day === 1 ? DAY1 : day === 2 ? day2Plan() : day === 3 ? DAY3 : day === 4 ? DAY4 : FREE_DAY;
@@ -998,12 +1002,9 @@ export class Sim {
   /** Ambient actions share the context prompt and yield to all existing interact targets. */
   get encounterPrompt(): string {
     if (this.bike.rider || this.brewing > 0 || this.hushing) return '';
+    if (this.dialogue) return '';
     const near = this.encounterNear();
-    if (near?.resident) {
-      const offer = this.errands.offer(near.resident.id);
-      if (offer) return offer.canAccept ? `accept “${offer.errand.title}”` : `ask ${near.resident.profile.name} about an errand`;
-      return near.resident.action(this.tasks.day);
-    }
+    if (near?.resident) return `talk to ${near.resident.profile.name}`;
     return near?.animal ? `watch the ${wildlifeNames[near.animal.species].toLowerCase()}` : '';
   }
 
@@ -1011,26 +1012,73 @@ export class Sim {
     const near = this.encounterNear();
     if (near?.resident) {
       const resident = near.resident;
-      const offer = this.errands.discuss(resident.id);
-      if (offer) {
-        const { errand, accepted } = offer;
-        resident.acknowledge(1.8);
-        this.residents.speak(resident, accepted
-          ? `Sağ ol. Start at ${errand.stops[0].place}. I’ve marked the map.`
-          : `${errand.offer} I’ll pay ${errand.reward} ₺.`);
-        if (accepted) {
-          this.events.emit('errandChanged', { title: errand.title });
-        }
-      } else this.residents.greet(resident, {
-        day: this.tasks.day, hour: this.hour, gateOpen: this.gateOpen,
-        flockExposed: this.flock.sheep.length - this.sheepInPen >= 5,
-      });
+      this.say(resident, resident.greeting(this.residentContext()), 'greet');
+      this.residents.greetSound(resident);
     } else if (near?.animal) {
       const animal = near.animal;
       this.observed = { animal, until: this.tick + 6 / SIM_DT };
       this.events.emit('encounter', { name: wildlifeNames[animal.species], text: animal.describe() });
     } else return false;
     return true;
+  }
+
+  private residentContext() {
+    return { hour: this.hour, gateOpen: this.gateOpen, flockExposed: this.flock.sheep.length - this.sheepInPen >= 5 };
+  }
+
+  private say(resident: Resident, text: string, gesture: ResidentGesture, offer?: ResidentDialogue['offer']): void {
+    const options: DialogueOption[] = [];
+    const errand = this.errands.forResident(resident.id);
+    const status = this.errands.status(resident.id);
+    if (offer) {
+      options.push({ id: 'accept', label: 'I’ll help' });
+    } else if (errand) {
+      options.push({ id: 'errand', label: status === undefined ? 'Is there anything I can do?' : 'Talk about the errand' });
+    }
+    options.push(
+      { id: 'routine', label: 'What are you up to today?' },
+      { id: 'advice', label: 'Any advice for the road?' },
+      { id: 'leave', label: offer ? 'Maybe later' : 'See you later' },
+    );
+    resident.conversation = true;
+    resident.perform(gesture, Math.min(8, Math.max(2.2, text.length / 19)));
+    this.dialogue = { resident, text, offer, options };
+  }
+
+  private closeDialogue(farewell = false): void {
+    if (!this.dialogue) return;
+    const { resident } = this.dialogue;
+    resident.conversation = false;
+    resident.perform('farewell', farewell ? 0.95 : 0);
+    this.dialogue = null;
+  }
+
+  private reply(choice: DialogueChoice): void {
+    const dialogue = this.dialogue;
+    if (!dialogue?.options.some((option) => option.id === choice)) return;
+    const { resident } = dialogue;
+    if (choice === 'leave') {
+      this.closeDialogue(true);
+    } else if (choice === 'routine') {
+      this.say(resident, resident.routine(), 'explain', dialogue.offer);
+    } else if (choice === 'advice') {
+      this.say(resident, resident.advice(this.residentContext()), 'explain', dialogue.offer);
+    } else if (choice === 'accept') {
+      const errand = this.errands.accept(resident.id);
+      if (!errand) return;
+      this.say(resident, `Sağ ol. Start at ${errand.stops[0].place}. I’ve marked the map.`, 'thank');
+      this.events.emit('errandChanged', { title: errand.title });
+    } else {
+      const errand = this.errands.forResident(resident.id);
+      if (!errand) return;
+      const status = this.errands.status(resident.id);
+      if (status === undefined) this.say(resident, errand.offer, 'offer', errand);
+      else {
+        const stop = errand.stops[status];
+        this.say(resident, stop ? `Your next stop is ${stop.place}. I’ve marked it on the map.` : errand.thanks,
+          stop ? 'explain' : 'thank');
+      }
+    }
   }
 
   get errandTarget(): ErrandTarget | undefined {
@@ -1601,6 +1649,13 @@ export class Sim {
     // Petting: E next to the dog, unless the gate, a stuck sheep or the bike needs the hands.
     const dog = this.dog;
     const dogDist = Math.hypot(dog.x - p.pos.x, dog.z - p.pos.z);
+    const resident = this.dialogue?.resident;
+    if (resident && (b.rider || this.brewing > 0 || f.hush || f.rest || !resident.withinConversation(p.pos))) this.closeDialogue();
+    if (usedInteract && f.interact) this.closeDialogue();
+    if (this.dialogue && f.dialogue && (!f.interact || !usedInteract)) {
+      this.reply(f.dialogue);
+      usedInteract = true;
+    }
     let workingErrand = false;
     if ((f.interact || f.interactHeld) && !usedInteract && !b.rider && !stuckNear) {
       const wantsCare = dogDist < 2.5 && (dog.praiseTimer > 0 || dog.care.ticks > 0 || !dog.care.pettedToday);
@@ -1611,10 +1666,14 @@ export class Sim {
         && !f.hush && !f.rest && this.brewing === 0;
       const target = canMeet ? this.errands.near(p.pos) : undefined;
       if (target?.stop.seconds && f.interactHeld) {
+        this.closeDialogue();
         workingErrand = true;
         if (this.errands.work(target, SIM_DT)) this.finishErrandStop(target);
       } else if (f.interact) {
-        if (target && !target.stop.seconds) this.finishErrandStop(target);
+        if (target && !target.stop.seconds) {
+          this.closeDialogue();
+          this.finishErrandStop(target);
+        } else if (this.dialogue && !target) this.reply('leave');
         else if (!target && (!canMeet || !this.interactWithLife()) && dogDist < 2.5) dog.pet(this.tick);
       }
     }

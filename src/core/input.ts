@@ -7,6 +7,7 @@ import type { DogCommand } from '../dog/commands';
 import { COMMANDS } from '../dog/commands';
 import type { ItemId } from '../player/satchel';
 import { config } from './config';
+import type { DialogueChoice } from '../life/dialogue';
 
 /** At a shop counter: sell what they buy, or buy one of their goods. */
 export interface TradeRequest {
@@ -60,6 +61,7 @@ export interface InputFrame {
   pack: ItemId[] | null;
   /** Edge-triggered: a trade at a shop counter (from the shop card). */
   trade: TradeRequest | null;
+  dialogue: DialogueChoice | null;
   /** Camera yaw at sampling time; movement is camera-relative. */
   camYaw: number;
 }
@@ -90,6 +92,7 @@ export const emptyFrame = (camYaw = 0): InputFrame => ({
   cairn: false,
   pack: null,
   trade: null,
+  dialogue: null,
   camYaw,
 });
 
@@ -117,6 +120,8 @@ export class Input {
   private latchedItem = -1;
   private latchedPack: ItemId[] | null = null;
   private latchedTrade: TradeRequest | null = null;
+  private latchedDialogue: DialogueChoice | null = null;
+  dialogueControls: { move: (direction: number) => void; select: () => DialogueChoice | undefined } | null = null;
   /** Gamepad: the satchel slot Y uses (D-pad right taps cycle it). */
   selectedSlot = 0;
   private padRightTicks = 0;
@@ -282,6 +287,7 @@ export class Input {
     const latched: Record<string, boolean> = this.latched;
     for (const k of Object.keys(latched)) latched[k] = false;
     this.latchedItem = -1;
+    this.latchedDialogue = null;
     this.latchedCommand = null;
     this.wheel.open = false;
     this.lookDX = this.lookDY = 0;
@@ -293,6 +299,10 @@ export class Input {
   /** The shop card asks for a trade (applied on the next sim tick). */
   requestTrade(t: TradeRequest): void {
     this.latchedTrade = t;
+  }
+
+  requestDialogue(choice: DialogueChoice): void {
+    this.latchedDialogue = choice;
   }
 
   /** The packing card asks to repack the satchel (applied on the next sim tick). */
@@ -392,8 +402,17 @@ export class Input {
       if (Math.abs(sx) > 0) f.steer = sx;
       const ry = dz(p.axes[3] ?? 0);
       if (ry !== 0 && !(this.wheel.open && this.wheelFromPad)) f.weightShift = -ry;
-      if (edge(1)) this.latched.horn = true; // B / Circle
-      if (edge(12)) this.latched.lamp = true; // D-pad up
+      const dialogue = this.dialogueControls;
+      if (dialogue) {
+        if (edge(12) || edge(13)) {
+          this.lastDevice = 'gamepad';
+          dialogue.move(edge(12) ? -1 : 1);
+        }
+        if (edge(1)) this.latchedDialogue = 'leave';
+      } else {
+        if (edge(1)) this.latched.horn = true; // B / Circle
+        if (edge(12)) this.latched.lamp = true; // D-pad up
+      }
       if (edge(GP.RB)) this.latched.water = true;
       if (btn(GP.RB)) f.bikeWork = true;
       if (edge(2)) this.latched.sling = true; // X / Square
@@ -415,7 +434,11 @@ export class Input {
         this.aHeldTicks = btn(GP.A) ? this.aHeldTicks + 1 : 0;
         if (this.aHeldTicks === 36) this.latched.interact = true;
       } else {
-        if (edge(GP.A)) this.latched.interact = true;
+        if (edge(GP.A)) {
+          this.lastDevice = 'gamepad';
+          this.latched.interact = true;
+          this.latchedDialogue ??= dialogue?.select() ?? null;
+        }
         if (btn(GP.A)) f.interactHeld = true;
       }
       // LB held = whistle wheel, right stick picks.
@@ -437,6 +460,8 @@ export class Input {
     f.pack = this.latchedPack;
     f.trade = this.latchedTrade;
     this.latchedTrade = null;
+    f.dialogue = this.latchedDialogue;
+    this.latchedDialogue = null;
     this.latched.kick = this.latched.horn = this.latched.lamp = this.latched.sling = false;
     this.latchedItem = -1;
     this.latchedPack = null;

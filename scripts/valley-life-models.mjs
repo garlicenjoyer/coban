@@ -1,73 +1,10 @@
 import { CylinderGeometry, DodecahedronGeometry, Group } from 'three';
 import { group, Parts } from './model-parts.mjs';
 import { crate } from './village-market.mjs';
+import { villagerModel } from './villager-models.mjs';
 
 const charcoal = '#373632';
 const iron = '#62645c';
-
-function human(parent, name, clothes, seated = false) {
-  const root = group(parent, name);
-  const skin = clothes.skin;
-  const hips = group(root, 'Hips', [0, 0.88, 0]);
-  const torso = group(hips, 'Torso');
-  new Parts()
-    .oval([0, 0.06, 0], [0.178, 0.15, 0.125], clothes.pants)
-    .sweep([[0, 0.06, 0, 0.15, 0.10], [0, 0.23, 0, 0.18, 0.12], [0, 0.40, 0.01, 0.212, 0.108],
-      [0, 0.49, 0.01, 0.105, 0.074]], clothes.top, 12, 3, [1, 0, 0])
-    .box([0, 0.2, 0.110], [0.06, 0.26, 0.013], clothes.trim)
-    .oval([0, 0.48, 0.005], [0.077, 0.092, 0.067], skin)
-    .oval([0, 0.488, 0], [0.108, 0.045, 0.088], clothes.trim)
-    .mesh(torso, 'Coat');
-  const head = group(torso, 'Head', [0, 0.55, 0.014]);
-  const face = new Parts()
-    .oval([0, 0.083, 0], [0.095, 0.121, 0.084], skin)
-    .oval([0, 0.07, 0.079], [0.029, 0.039, 0.034], clothes.cheek)
-    .oval([0, 0.022, 0.052], [0.065, 0.046, 0.047], skin)
-    .oval([0, 0.026, 0.093], [0.032, 0.006, 0.007], '#784d41');
-  for (const s of [-1, 1]) {
-    face.oval([s * 0.084, 0.074, 0], [0.025, 0.035, 0.021], clothes.cheek);
-    face.oval([s * 0.038, 0.095, 0.078], [0.013, 0.009, 0.007], charcoal);
-    face.oval([s * 0.038, 0.109, 0.076], [0.021, 0.006, 0.009], '#4e3d37');
-  }
-  if (clothes.scarf) {
-    face.oval([0, 0.157, -0.015], [0.108, 0.075, 0.095], clothes.hat);
-    face.sweep([[-0.083, 0.17, 0.024, 0.025, 0.033], [-0.086, 0.08, -0.018, 0.032, 0.06],
-      [-0.062, -0.014, -0.032, 0.037, 0.061], [0, -0.05, -0.034, 0.028, 0.047],
-      [0.071, -0.021, -0.016, 0.031, 0.061], [0.093, 0.11, -0.024, 0.025, 0.057]], clothes.hat, 8, 2, [0, 0, 1]);
-    face.oval([-0.044, -0.052, 0.071], [0.035, 0.039, 0.04], clothes.trim, [0, 0, -0.38]);
-  } else {
-    face.oval([0, 0.159, -0.015], [0.117, 0.063, 0.106], clothes.hat);
-    face.oval([0, 0.148, 0.076], [0.102, 0.012, 0.075], clothes.trim, [0.1, 0, 0]);
-    if (clothes.beard) face.oval([0, 0.045, 0.080], [0.054, 0.013, 0.026], clothes.beard);
-  }
-  face.mesh(head, 'Face');
-
-  for (const [side, s] of [['Left', -1], ['Right', 1]]) {
-    const arm = group(torso, `${side} Arm`, [s * 0.185, 0.392, 0]);
-    new Parts().oval([s * 0.018, -0.108, 0], [0.071, 0.17, 0.069], clothes.top, [0, 0, s * 0.16], 10)
-      .mesh(arm, 'Sleeve');
-    const elbow = group(arm, `${side} Elbow`, [s * 0.025, -0.239, 0]);
-    new Parts().oval([0, -0.097, 0.012], [0.055, 0.14, 0.055], clothes.top, undefined, 10)
-      .oval([0, -0.21, 0.016], [0.044, 0.064, 0.034], skin, undefined, 10).mesh(elbow, 'Cuff and hand');
-    const leg = group(hips, `${side} Leg`, [s * 0.092, -0.024, 0]);
-    new Parts().oval([0, -0.19, 0], [0.082, 0.244, 0.084], clothes.pants, undefined, 10).mesh(leg, 'Trouser');
-    const knee = group(leg, `${side} Knee`, [0, -0.39, 0]);
-    new Parts().oval([0, -0.2, -0.004], [0.064, 0.235, 0.064], clothes.pants, undefined, 10)
-      .oval([0, -0.405, 0.055], [0.073, 0.051, 0.145], '#504738', undefined, 10).mesh(knee, 'Boot');
-    if (seated) {
-      arm.rotation.x = -0.75;
-      elbow.rotation.x = -0.65;
-      leg.rotation.x = -1.44;
-      knee.rotation.x = 1.43;
-    } else arm.rotation.z = s * 0.07;
-  }
-  return root;
-}
-
-const emre = { top: '#778369', trim: '#414c3e', pants: '#4b534d', skin: '#c78d65', cheek: '#a5684d', hat: '#ad8663', beard: '#553b33' };
-const zeynep = { top: '#aa775c', trim: '#d0aa78', pants: '#595269', skin: '#d8a581', cheek: '#b57561', hat: '#796171', scarf: true };
-const ayse = { top: '#645870', trim: '#cf9b60', pants: '#5f4c52', skin: '#c78f6b', cheek: '#9e6656', hat: '#bb7655', scarf: true };
-const hasan = { top: '#60908b', trim: '#5b5045', pants: '#655b49', skin: '#b77a53', cheek: '#9c6049', hat: '#827757', beard: '#746658' };
 
 function tractor(parent, name, paint, lightPaint, driver) {
   const root = group(parent, name);
@@ -81,7 +18,6 @@ function tractor(parent, name, paint, lightPaint, driver) {
     .box([0, 0.89, -0.56], [0.48, 0.144, 0.39], '#4e3c32')
     .box([0, 1.06, -0.74], [0.48, 0.26, 0.115], '#503e34', [-0.12, 0, 0])
     .rod([0, 0.79, -0.03], [0, 1.27, -0.10], 0.027, 0.025, iron, 8)
-    .torus([0, 1.28, -0.10], 0.152, 0.016, charcoal, [1.25, 0, 0])
     .rod([0.255, 0.85, 0.55], [0.255, 1.55, 0.55], 0.044, 0.032, charcoal, 10)
     .rod([0.255, 1.55, 0.55], [0.255, 1.59, 0.58], 0.032, 0.033, iron, 10)
     .box([0, 0.43, -1.07], [0.55, 0.12, 0.23], iron)
@@ -101,12 +37,21 @@ function tractor(parent, name, paint, lightPaint, driver) {
     metal.box([s * 0.61, 1.04, -1.11], [0.095, 0.057, 0.024], '#a65342');
     metal.box([s * 0.46, 0.40, -0.21], [0.22, 0.045, 0.35], '#676153');
   }
-  if (driver.scarf) {
+  if (driver === 'zeynep') {
     metal.rod([-0.35, 0.69, -0.86], [-0.35, 1.99, -0.92], 0.035, 0.035, iron);
     metal.rod([0.35, 0.69, -0.86], [0.35, 1.99, -0.92], 0.035, 0.035, iron);
     metal.rod([-0.35, 1.99, -0.92], [0.35, 1.99, -0.92], 0.035, 0.035, iron);
   }
   metal.mesh(root, 'Bodywork');
+
+  const steering = group(root, 'Steering Wheel', [0, 1.28, -0.10]);
+  steering.rotation.order = 'XYZ';
+  steering.rotation.x = 1.25;
+  const rim = new Parts().torus([0, 0, 0], 0.152, 0.016, charcoal);
+  for (const angle of [0, 2.09, 4.19]) {
+    rim.rod([0, 0, 0], [Math.cos(angle) * 0.15, Math.sin(angle) * 0.15, 0], 0.013, 0.011, iron, 8);
+  }
+  rim.oval([0, 0, 0.012], [0.037, 0.036, 0.017], charcoal).mesh(steering, 'Rim and hub');
 
   for (const [end, z, radius, spread, width] of [['Rear', -0.72, 0.56, 0.63, 0.285], ['Front', 0.98, 0.355, 0.50, 0.18]]) {
     for (const [side, s] of [['Left', -1], ['Right', 1]]) {
@@ -127,7 +72,7 @@ function tractor(parent, name, paint, lightPaint, driver) {
       rubber.mesh(wheel, 'Tread and hub');
     }
   }
-  human(root, 'Driver', driver, true).position.set(0, 0.087, -0.51);
+  villagerModel(root, 'Driver', driver, true).position.set(0, driver === 'zeynep' ? 0.118 : 0.061, -0.51);
 }
 
 function bird(parent, name, hoopoe) {
@@ -304,10 +249,10 @@ export function valleyLifeModels() {
   bird(catalogue, 'Hoopoe', true);
   mammal(catalogue, 'Hare', false);
   mammal(catalogue, 'Fox', true);
-  human(catalogue, 'Ayse', ayse);
-  human(catalogue, 'Hasan', hasan);
-  tractor(catalogue, 'Rust Tractor', '#9f5340', '#bf7955', emre);
-  tractor(catalogue, 'Blue Tractor', '#537b87', '#779897', zeynep);
+  villagerModel(catalogue, 'Ayse', 'ayse');
+  villagerModel(catalogue, 'Hasan', 'hasan');
+  tractor(catalogue, 'Rust Tractor', '#9f5340', '#bf7955', 'emre');
+  tractor(catalogue, 'Blue Tractor', '#537b87', '#779897', 'zeynep');
   errandProps(catalogue);
   return catalogue;
 }

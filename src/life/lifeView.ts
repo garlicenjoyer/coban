@@ -1,7 +1,10 @@
 import * as THREE from 'three';
+import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
+import { ShepherdFootwork } from '../player/shepherdFootwork';
 import { modelPart } from '../render/gameModel';
 import { angleDelta, type Resident, type Residents } from './residents';
 import type { Animal, Species, Wildlife } from './wildlife';
+import { residentFace, residentGesture, residentWork, type GesturePose } from './residentAnimation';
 
 const { lerp, clamp } = THREE.MathUtils;
 const speciesModels: Record<Species, string> = { swallow: 'Swallow', hoopoe: 'Hoopoe', hare: 'Hare', fox: 'Fox' };
@@ -35,36 +38,57 @@ class ResidentPose {
   readonly root: THREE.Object3D;
   private head: THREE.Object3D;
   private hips: THREE.Object3D;
+  private chest: THREE.Object3D;
+  private hipsHeight: number;
   private arms: THREE.Object3D[];
   private elbows: THREE.Object3D[];
   private legs: THREE.Object3D[];
   private knees: THREE.Object3D[];
+  private feet: THREE.Object3D[];
+  private hands: THREE.Object3D[];
+  private eyes: THREE.Object3D[];
+  private mouth: THREE.Object3D;
+  private steering?: THREE.Object3D;
   private axles: THREE.Object3D[];
   private wheels: THREE.Object3D[];
   private tools?: Record<'broom' | 'tea', THREE.Object3D>;
+  private footwork?: ShepherdFootwork;
   private working = 0;
-  private lift = 0;
+  private workClock = 0;
+  private pose: GesturePose = {};
 
-  constructor(resident: Resident, models: THREE.Group) {
-    this.root = modelPart(models, resident.profile.model).clone(true);
+  constructor(resident: Resident, models: THREE.Group, private groundAt: (x: number, z: number) => number) {
+    this.root = cloneSkeleton(modelPart(models, resident.profile.model));
     this.root.rotation.order = 'YXZ';
+    this.root.traverse((node) => {
+      if (node instanceof THREE.SkinnedMesh) node.frustumCulled = false;
+    });
     const joint = jointsOf(this.root);
     this.head = joint('Head');
     this.hips = joint('Hips');
+    this.hipsHeight = this.hips.position.y;
+    this.chest = joint('Chest');
     this.arms = sides.map((s) => joint(`${s} Arm`));
     this.elbows = sides.map((s) => joint(`${s} Elbow`));
     this.legs = sides.map((s) => joint(`${s} Leg`));
     this.knees = sides.map((s) => joint(`${s} Knee`));
+    this.feet = sides.map((s) => joint(`${s} Foot`));
+    this.hands = sides.map((s) => joint(`${s} Hand`));
+    this.eyes = sides.map((s) => joint(`${s} Eye`));
+    this.mouth = joint('Mouth');
+    this.steering = resident.tractor ? joint('Steering Wheel') : undefined;
     this.axles = resident.tractor ? sides.map((s) => joint(`Front ${s} Axle`)) : [];
     this.wheels = resident.tractor ? ['Front', 'Rear'].flatMap((end) =>
       sides.map((s) => joint(`${end} ${s} Wheel`))) : [];
     if (!resident.tractor) {
+      const rest = this.feet.map((foot) => this.root.worldToLocal(foot.getWorldPosition(new THREE.Vector3())));
+      this.footwork = new ShepherdFootwork(rest[0], rest[1]);
       const broom = modelPart(models, 'Hand broom').clone(true);
       const tea = modelPart(models, 'Tea glass').clone(true);
-      broom.position.set(0.045, -0.21, 0.05);
-      tea.position.set(0.016, -0.215, 0.056);
+      broom.position.set(0.018, -0.063, 0.028);
+      tea.position.set(0.005, -0.061, 0.040);
       broom.visible = tea.visible = false;
-      this.elbows[1].add(broom, tea);
+      this.hands[1].add(broom, tea);
       this.tools = { broom, tea };
     }
   }
@@ -75,62 +99,136 @@ class ResidentPose {
     place(this.root, r, alpha);
     this.head.rotation.y = r.glance;
     this.head.rotation.x = Math.sin(time * 1.6) * 0.026;
-    this.lift = lerp(this.lift, Math.min(1, r.wave * 4), 1 - Math.exp(-dt * 11));
+    const face = residentFace(r.id, time, r.lineAge, r.speaking);
+    this.eyes.forEach((eye) => { eye.scale.y = face.eyes; });
+    this.mouth.scale.y = face.mouth;
     const pose = r.settled ? r.destination.pose : undefined;
-    const active = !!pose && !r.speaking && r.wave === 0;
+    const active = !!pose && !r.conversation && !r.gesturing && r.wave === 0;
     this.working = lerp(this.working, active ? 1 : 0, 1 - Math.exp(-dt * 7));
+    if (active) this.workClock += dt;
     if (r.tractor) {
       const strain = Math.min(1, r.speed / 4);
+      const steering = clamp(angleDelta(r.previousYaw, r.yaw) * 18, -0.38, 0.38) * strain;
       this.root.rotation.x = r.pitch + Math.sin(time * 36) * (r.parked ? 0 : 0.0024);
       this.root.rotation.z = r.roll;
-      this.axles.forEach((axle) => { axle.rotation.y = clamp(angleDelta(r.previousYaw, r.yaw) * 18, -0.38, 0.38) * strain; });
+      this.axles.forEach((axle) => { axle.rotation.y = steering; });
       this.wheels.forEach((wheel, i) => { wheel.rotation.x = r.travel / (i < 2 ? 0.355 : 0.56); });
-      this.arms[1].rotation.x = -0.75;
-      if (pose === 'check') this.head.rotation.x += 0.13 * this.working * (1 + Math.sin(time * 1.8));
+      this.chest.rotation.x = 0.11 + 0.018 * Math.sin(time * 2.1);
+      this.chest.rotation.y = 0;
+      this.steering!.rotation.set(1.25, 0, lerp(this.steering!.rotation.z, -steering * 1.25, 1 - Math.exp(-dt * 7)));
+      this.arms[1].rotation.set(-0.78, 0, 0.24);
+      this.elbows[1].rotation.set(-0.74, 0, 0);
     } else {
       const phase = r.travel * 5.6;
       const motion = clamp(r.speed / 1.25, 0, 1);
-      this.hips.position.y = 0.88 + Math.cos(phase * 2) * motion * 0.022;
-      this.hips.rotation.z = Math.cos(phase) * motion * 0.047;
-      this.legs.forEach((leg, i) => {
+      this.hips.position.y = this.hipsHeight - motion * 0.027 + Math.cos(phase * 2) * motion * 0.017;
+      this.hips.rotation.z = Math.cos(phase) * motion * 0.036;
+      this.chest.rotation.y = Math.sin(phase) * motion * 0.09;
+      this.chest.rotation.x = Math.sin(time * 1.95) * 0.023 + motion * 0.065;
+      this.arms.forEach((arm, i) => {
         const stride = Math.sin(phase + i * Math.PI);
-        leg.rotation.x = stride * 0.54 * motion;
-        this.knees[i].rotation.x = Math.max(0, stride) * 0.69 * motion;
-        this.arms[i].rotation.x = -stride * 0.37 * motion;
+        arm.rotation.x = -stride * 0.37 * motion;
+        arm.rotation.z = i === 0 ? -0.10 : 0.10;
         this.elbows[i].rotation.x = -0.10 - Math.max(0, -stride) * 0.25 * motion;
       });
-      const effort = this.working;
-      const swing = Math.sin(time * 4);
       this.hips.rotation.x = 0;
       if (this.tools) {
-        this.tools.broom.visible = pose === 'sweep' && effort > 0.65;
-        this.tools.tea.visible = pose === 'tea' && effort > 0.65;
-        this.tools.broom.rotation.set(0.5, 0, -swing * 0.18);
+        this.tools.broom.visible = pose === 'sweep' && this.working > 0.48;
+        this.tools.tea.visible = pose === 'tea' && this.working > 0.48;
+        this.tools.broom.rotation.set(0.42, 0, -(this.pose.wrist ?? 0) * 0.75);
         this.tools.tea.rotation.x = 1.12;
-      }
-      if (pose === 'sweep') {
-        this.hips.rotation.x = 0.14 * effort;
-        this.hips.rotation.z += swing * effort * 0.08;
-        this.arms[1].rotation.x -= (0.28 + swing * 0.21) * effort;
-        this.elbows[1].rotation.x -= 0.26 * effort;
-      } else if (pose === 'sort') {
-        this.hips.rotation.x = 0.18 * effort;
-        this.head.rotation.x += 0.22 * effort;
-        this.arms[0].rotation.x -= (0.48 + swing * 0.14) * effort;
-        this.arms[1].rotation.x -= (0.48 - swing * 0.14) * effort;
-        this.elbows.forEach((elbow) => { elbow.rotation.x -= 0.60 * effort; });
-      } else if (pose === 'tea') {
-        const sip = Math.max(0, Math.sin(time * 0.65)) ** 5;
-        this.arms[1].rotation.x -= (0.20 + sip * 0.49) * effort;
-        this.elbows[1].rotation.x -= (0.61 + sip * 0.77) * effort;
       }
     }
 
-    const right = this.arms[1];
-    right.rotation.x = lerp(right.rotation.x, -0.54, this.lift);
-    right.rotation.z = lerp(r.tractor ? 0 : 0.07, 1.75, this.lift);
-    this.elbows[1].rotation.x = lerp(r.tractor ? -0.65 : this.elbows[1].rotation.x, -1.03, this.lift);
-    this.elbows[1].rotation.z = Math.sin(time * 17) * this.lift * 0.33;
+    const work = pose ? residentWork(r.id, pose, this.workClock) : {};
+    const gesture = r.gesturing ? residentGesture(r.id, r.gesture, r.lineAge)
+      : r.wave > 0 ? residentGesture(r.id, 'greet', 1.5 - r.wave) : {};
+    const k = 1 - Math.exp(-dt * 15);
+    const channels = new Set([...Object.keys(this.pose), ...Object.keys(gesture), ...Object.keys(work)] as (keyof GesturePose)[]);
+    for (const channel of channels) {
+      this.pose[channel] = lerp(this.pose[channel] ?? 0, (work[channel] ?? 0) * this.working + (gesture[channel] ?? 0), k);
+    }
+    this.applyGesture(r.tractor);
+    if (r.tractor) this.fitDriver(clamp(this.pose.release ?? 0, 0, 1));
+    else {
+      this.plantFeet(r.speed, dt);
+      if (this.tools?.broom.visible) {
+        const handle = this.tools.broom.localToWorld(new THREE.Vector3(0, 0.17, 0));
+        this.reach(this.arms[0], this.elbows[0], this.hands[0], handle, new THREE.Vector3(-0.4, -1, 0).transformDirection(this.root.matrixWorld));
+      }
+    }
+  }
+
+  private applyGesture(seated: boolean): void {
+    const p = this.pose;
+    this.chest.rotation.x += p.bow ?? 0;
+    this.chest.rotation.y += p.twist ?? 0;
+    this.head.rotation.set(this.head.rotation.x + (p.nod ?? 0), this.head.rotation.y + (p.look ?? 0), p.tilt ?? 0);
+    if (!seated) {
+      this.arms[0].rotation.x += p.left ?? 0;
+      this.arms[0].rotation.z -= p.leftOut ?? 0;
+      this.elbows[0].rotation.x += p.leftBend ?? 0;
+    }
+    this.arms[1].rotation.x += p.right ?? 0;
+    this.arms[1].rotation.z += p.rightOut ?? 0;
+    this.elbows[1].rotation.x += p.rightBend ?? 0;
+    this.hands[1].rotation.set(-(p.wrist ?? 0) * 0.55, 0, p.wrist ?? 0);
+  }
+
+  private plantFeet(speed: number, dt: number): void {
+    const footwork = this.footwork!;
+    const frame = this.root.matrixWorld;
+    this.root.updateWorldMatrix(true, false);
+    footwork.advance(frame, dt, speed, 0, 0, true, this.groundAt);
+    const orientation = this.root.getWorldQuaternion(new THREE.Quaternion());
+    for (const [i, step] of footwork.feet.entries()) {
+      this.reach(this.legs[i], this.knees[i], this.feet[i],
+        step.target.clone().applyMatrix4(frame), new THREE.Vector3(i === 0 ? -0.12 : 0.12, 0, 1).transformDirection(frame));
+      const foot = this.feet[i];
+      const pitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step.pitch);
+      foot.quaternion.copy(foot.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(orientation).multiply(pitch);
+    }
+  }
+
+  private fitDriver(release: number): void {
+    const orientation = this.root.getWorldQuaternion(new THREE.Quaternion());
+    for (const [i, foot] of this.feet.entries()) {
+      const side = i === 0 ? -1 : 1;
+      const pedal = this.root.localToWorld(new THREE.Vector3(side * 0.225, 0.766, -0.225));
+      this.reach(this.legs[i], this.knees[i], foot, pedal,
+        new THREE.Vector3(side * 0.30, 0.14, 1).transformDirection(this.root.matrixWorld));
+      foot.quaternion.copy(foot.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(orientation);
+    }
+    for (const [i, hand] of this.hands.entries()) {
+      const weight = i === 0 ? 1 : 1 - release;
+      if (weight < 0.01) continue;
+      const side = i === 0 ? -1 : 1;
+      const grip = this.steering!.localToWorld(new THREE.Vector3(side * 0.153, -0.047, -0.040));
+      grip.lerp(hand.getWorldPosition(new THREE.Vector3()), 1 - weight);
+      this.reach(this.arms[i], this.elbows[i], hand, grip,
+        new THREE.Vector3(side * 0.62, -1, -0.12).transformDirection(this.root.matrixWorld));
+    }
+  }
+
+  /** Solve around the anatomical knee or elbow bend while keeping the hand or foot on target. */
+  private reach(upper: THREE.Object3D, mid: THREE.Object3D, end: THREE.Object3D, target: THREE.Vector3, pole: THREE.Vector3): void {
+    const origin = upper.getWorldPosition(new THREE.Vector3());
+    const joint = mid.getWorldPosition(new THREE.Vector3());
+    const tip = end.getWorldPosition(new THREE.Vector3());
+    const a = origin.distanceTo(joint), b = joint.distanceTo(tip);
+    const dir = target.sub(origin);
+    const distance = clamp(dir.length(), Math.abs(a - b) + 0.001, a + b - 0.001);
+    dir.normalize();
+    const along = (a * a - b * b + distance * distance) / (2 * distance);
+    pole.addScaledVector(dir, -pole.dot(dir)).normalize();
+    const bend = origin.clone().addScaledVector(dir, along).addScaledVector(pole, Math.sqrt(Math.max(0, a * a - along * along)));
+    const reachable = origin.addScaledVector(dir, distance);
+    const aim = (bone: THREE.Object3D, child: THREE.Object3D, world: THREE.Vector3) => {
+      const direction = bone.parent!.worldToLocal(world).sub(bone.position).normalize();
+      bone.quaternion.setFromUnitVectors(child.position.clone().normalize(), direction);
+    };
+    aim(upper, mid, bend);
+    aim(mid, end, reachable);
   }
 }
 
@@ -228,7 +326,7 @@ export class LifeView {
     if (this.world !== wildlife) {
       this.world = wildlife;
       this.root.clear();
-      this.residents = residents.list.map((resident) => new ResidentPose(resident, this.models));
+      this.residents = residents.list.map((resident) => new ResidentPose(resident, this.models, this.groundAt));
       this.animals = wildlife.animals.map((animal) => new AnimalPose(modelPart(this.models, speciesModels[animal.species]), animal.species));
       this.root.add(...this.residents.map((pose) => pose.root), ...this.animals.map((pose) => pose.root));
       for (const resident of residents.list) {
