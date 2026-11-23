@@ -17,6 +17,7 @@ import { createPhysicsWorld } from '../src/world/physics';
 import { Surface } from '../src/world/terrain';
 import { TEST_MAP } from '../src/world/testMap';
 import { dereDistance, hillRoadDistance, mainRoadDistance, VALLEY_MAP, valleyLayout as L } from '../src/world/valley';
+import { onVillagePaving } from '../src/world/villagePlan';
 import { initRapier, yawToward } from './helpers';
 
 const terrain = VALLEY_MAP.buildTerrain();
@@ -137,6 +138,18 @@ describe('valley layout', () => {
     // The doorway (east) and the inside are open.
     expect(obstacles.blocked(h.x + h.hx, h.z, 0.3)).toBe(false);
     expect(obstacles.blocked(h.x, h.z, 1)).toBe(false);
+  });
+
+  it('paves the approach and market entrances, with room to reach each counter', () => {
+    const v = L.village;
+    for (const [dx, dz] of [[-24, 34], [-17, 24], [-9, 13], [-5, 7], [0, 0]]) {
+      expect(onVillagePaving(v, v.x + dx, v.z + dz)).toBe(true);
+      expect(obstacles.blocked(v.x + dx, v.z + dz, 0.4)).toBe(false);
+    }
+    for (const shop of v.shops ?? []) {
+      if (shop.id !== 'dealer') expect(onVillagePaving(v, shop.x, shop.z)).toBe(true);
+      expect(obstacles.blocked(shop.x, shop.z, 0.35)).toBe(false);
+    }
   });
 
   it("Uncle Ahmet's cairns mark his routes, and the village has its houses and minaret", () => {

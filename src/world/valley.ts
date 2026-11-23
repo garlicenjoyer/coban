@@ -17,6 +17,7 @@ import type { Decor, Label, Layout, MapDef, MapProps, Prop, Sketcher, V2 } from 
 import { fbm, rng } from './noise';
 import { valleyNotes } from './valleyNotes';
 import { Surface, Terrain } from './terrain';
+import { COFFEEHOUSE, COURTYARD_TREES, FOUNTAIN, MOSQUE, SQUARE_TREE } from './villagePlan';
 
 export const VALLEY_SIZE = 1200;
 export const VALLEY_SAMPLES = 601; // 600 cells, 2 m per cell (the grass map's texel)
@@ -128,8 +129,6 @@ const HOUSES: [number, number, number, number, number][] = [
   [-30, -26, 3.5, 3, 3.2],
   [32, 27, 4, 3, 3.2],
 ];
-const KAHVEHANE: [number, number, number, number, number] = [0, 19, 6, 4, 3.6];
-const MOSQUE: [number, number, number, number, number] = [-34, 28, 5, 5, 5];
 const MINARET = { dx: V.minaret!.x - V.x, dz: V.minaret!.z - V.z, r: 1.1, h: V.minaret!.h };
 
 // ---------- roads, riverbed, routes ----------
@@ -407,7 +406,7 @@ export function buildTerrain(): Terrain {
   const f = L.works.fold;
   const foldLevel = rawHeight((f.xMin + f.xMax) / 2 - 3, (f.zMin + f.zMax) / 2 - 3);
   const squareLevel = rawHeight(V.x, V.z);
-  const pads = [...HOUSES, KAHVEHANE, MOSQUE].map(([dx, dz, hx, hz]) => ({ x: V.x + dx, z: V.z + dz, hx: hx + 1.5, hz: hz + 1.5, level: rawHeight(V.x + dx, V.z + dz) }));
+  const pads = [...HOUSES, COFFEEHOUSE, MOSQUE].map(([dx, dz, hx, hz]) => ({ x: V.x + dx, z: V.z + dz, hx: hx + 1.5, hz: hz + 1.5, level: rawHeight(V.x + dx, V.z + dz) }));
 
   for (let ix = 0; ix < N; ix++) {
     for (let iz = 0; iz < N; iz++) {
@@ -583,8 +582,8 @@ export function buildProps(t: Terrain): MapProps {
     i++;
   }
 
-  // ---------------------------------------------------------------- the village (a shell)
-  for (const [dx, dz, hx, hz, h] of [...HOUSES, KAHVEHANE, MOSQUE]) {
+  // ---------------------------------------------------------------- the village
+  for (const [dx, dz, hx, hz, h] of [...HOUSES, COFFEEHOUSE, MOSQUE]) {
     const x = V.x + dx;
     const z = V.z + dz;
     const y = t.heightAt(x, z);
@@ -593,8 +592,13 @@ export function buildProps(t: Terrain): MapProps {
   const mx = V.x + MINARET.dx;
   const mz = V.z + MINARET.dz;
   props.push({ kind: 'cyl', role: 'minaret', x: mx, y: t.heightAt(mx, mz), z: mz, radius: MINARET.r, height: MINARET.h });
-  // A plane-tree-sized pine shading the square's corner.
-  props.push({ kind: 'cyl', role: 'pine', x: V.x - 11, y: t.heightAt(V.x - 11, V.z - 7) - 0.2, z: V.z - 7, radius: 0.5, height: 13 });
+  for (const tree of [SQUARE_TREE, ...COURTYARD_TREES]) {
+    const x = V.x + tree.x, z = V.z + tree.z;
+    props.push({ kind: 'cyl', role: 'villageTree', x, y: t.heightAt(x, z), z, radius: tree.radius, height: tree.height });
+  }
+  const fx = V.x + FOUNTAIN.x, fz = V.z + FOUNTAIN.z;
+  props.push({ kind: 'cyl', role: 'villageFountain', x: fx, y: t.heightAt(fx, fz), z: fz,
+    radius: FOUNTAIN.radius, height: FOUNTAIN.height });
 
   // Maquis shrubs (decoration only): densest on the maquis hills.
   const decor: Decor[] = [];
@@ -680,7 +684,7 @@ function sketch(s: Sketcher): void {
 
   // The village: little blocks for its houses, the minaret a dot.
   g.fillStyle = 'rgba(190, 100, 60, 0.75)';
-  for (const [dx, dz, hx, hz] of [...HOUSES, KAHVEHANE, MOSQUE]) g.fillRect(px(V.x + dx - hx), py(V.z + dz - hz), hx * 2 * s.scale + 1, hz * 2 * s.scale + 1);
+  for (const [dx, dz, hx, hz] of [...HOUSES, COFFEEHOUSE, MOSQUE]) g.fillRect(px(V.x + dx - hx), py(V.z + dz - hz), hx * 2 * s.scale + 1, hz * 2 * s.scale + 1);
   label('the village', V.x, V.z + 62, 15);
 
   // Area names.

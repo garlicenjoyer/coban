@@ -9,6 +9,7 @@ import { fbm, rng } from './noise';
 import type { Obstacles } from './obstacles';
 import { Surface, type Terrain } from './terrain';
 import { activeMap, insidePen, layout, roadDistance } from './map';
+import { onVillagePaving } from './villagePlan';
 
 const BASE_FLOWERS = 7000;
 
@@ -24,6 +25,7 @@ export function grassAllowed(obstacles: Obstacles): (x: number, z: number) => bo
   return (x, z) =>
     roadDistance(x, z) > 3.2 &&
     !insidePen(x, z, 1.5) &&
+    !onVillagePaving(layout.village, x, z, 0.40) &&
     !layout.springs.some((spring) => Math.hypot(x - spring.x, z - spring.z) < spring.radius + 0.2) &&
     !obstacles.blocked(x, z, 0.35) &&
     Math.abs(x) < half - 4 &&

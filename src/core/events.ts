@@ -64,7 +64,7 @@ export interface GameEvents {
   slingThrow: { x: number; y: number; z: number; tick: number };
   slingHit: { x: number; z: number; tick: number };
   /** Something from the satchel was used (text: what happened, for the notebook line). */
-  itemUsed: { item: string; ok: boolean; text: string };
+  itemUsed: { item: string; ok: boolean; text: string; target?: { x: number; z: number } };
   /** The satchel was repacked at home. */
   packed: { items: string[] };
   /** A structure was finished (hut, cistern) or a cairn stacked. */
