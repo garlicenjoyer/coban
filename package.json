@@ -1,0 +1,26 @@
+{
+  "name": "coban",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Çoban — Aegean shepherd game. Greybox prototype (M0 + M1).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:models": "node scripts/build-models.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
+    "lil-gui": "0.21.0",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.187.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.8",
+    "vitest": "3.2.7"
+  }
+}
