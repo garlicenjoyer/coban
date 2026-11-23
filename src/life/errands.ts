@@ -27,7 +27,6 @@ export interface ErrandTarget {
 
 export class Errands {
   private readonly progress: ErrandProgress = {};
-  private readonly offered = new Set<ResidentId>();
   private working?: ErrandStop;
   private worked = 0;
 
@@ -50,23 +49,19 @@ export class Errands {
         this.progress[resident] = index;
       }
     }
-    this.offered.clear();
     this.cancelWork();
   }
 
-  /** An offer is only a conversation. The next press is the player's opt-in. */
-  offer(id: ResidentId): { errand: Errand; canAccept: boolean } | undefined {
-    if (this.progress[id] !== undefined) return;
-    const errand = this.definitions.find((e) => e.resident === id);
-    if (errand) return { errand, canAccept: this.offered.has(id) };
+  /** The villager's errand can be discussed before or after accepting it. */
+  forResident(id: ResidentId): Errand | undefined {
+    return this.definitions.find((e) => e.resident === id);
   }
 
-  discuss(id: ResidentId): { errand: Errand; accepted: boolean } | undefined {
-    const offer = this.offer(id);
-    if (!offer) return;
-    if (offer.canAccept) this.progress[id] = 0;
-    else this.offered.add(id);
-    return { errand: offer.errand, accepted: offer.canAccept };
+  accept(id: ResidentId): Errand | undefined {
+    const errand = this.forResident(id);
+    if (!errand || this.progress[id] !== undefined) return;
+    this.progress[id] = 0;
+    return errand;
   }
 
   *targets(): Iterable<ErrandTarget> {

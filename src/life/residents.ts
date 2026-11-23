@@ -2,12 +2,13 @@ import type { EventBus, Vec3Like } from '../core/events';
 import type { ResidentId, ResidentStop, ValleyRoute, V2 } from '../world/mapTypes';
 import type { Obstacles } from '../world/obstacles';
 import type { Terrain } from '../world/terrain';
+import type { ResidentGesture } from './dialogue';
 
 const profiles = {
-  emre: { name: 'Emre', model: 'Rust Tractor', pace: 4.1 },
-  zeynep: { name: 'Zeynep', model: 'Blue Tractor', pace: 3.8 },
-  ayse: { name: 'Ayşe', model: 'Ayse', pace: 1.25 },
-  hasan: { name: 'Hasan', model: 'Hasan', pace: 1.36 },
+  emre: { name: 'Emre', model: 'Rust Tractor', pace: 4.1, trade: 'Terrace farmer' },
+  zeynep: { name: 'Zeynep', model: 'Blue Tractor', pace: 3.8, trade: 'Dairy driver' },
+  ayse: { name: 'Ayşe', model: 'Ayse', pace: 1.25, trade: 'Olive grower' },
+  hasan: { name: 'Hasan', model: 'Hasan', pace: 1.36, trade: 'Caretaker of the square' },
 } as const;
 
 export type { ResidentId } from '../world/mapTypes';
@@ -71,7 +72,6 @@ interface Context {
 }
 
 interface Greeting {
-  day: number;
   hour: number;
   flockExposed: boolean;
   gateOpen: boolean;
@@ -105,10 +105,11 @@ export class Resident {
   private offset = 0;
   private shoulder = 0;
   private progress = 0;
-  private talk = 0;
   private waveReady = true;
-  private lastDay = -1;
-  private greetings = 0;
+  conversation = false;
+  lineAge = Infinity;
+  gesture: ResidentGesture = 'greet';
+  private lineDuration = 0;
 
   constructor(route: ValleyRoute, private terrain: Terrain, private obstacles: Obstacles) {
     this.id = route.resident;
@@ -140,14 +141,17 @@ export class Resident {
     this.z = this.pz = z;
     this.y = this.py = this.terrain.heightAt(x, z);
     this.yaw = this.previousYaw = this.circuit.headingAt(this.progress);
-    this.offset = this.shoulder = this.speed = this.wave = this.glance = this.talk = 0;
+    this.offset = this.shoulder = this.speed = this.wave = this.glance = 0;
+    this.conversation = false;
+    this.lineAge = Infinity;
     this.yielding = false;
     this.waveReady = true;
     this.settled = true;
     this.parked = this.tractor;
   }
 
-  get speaking(): boolean { return this.talk > 0; }
+  get speaking(): boolean { return this.lineAge < this.lineDuration && this.gesture !== 'farewell'; }
+  get gesturing(): boolean { return this.lineAge < this.lineDuration; }
 
   private clear(x: number, z: number): boolean {
     return !this.obstacles.blocked(x, z, this.clearance);
@@ -162,33 +166,33 @@ export class Resident {
   }
 
   canTalk(player: Vec3Like): boolean {
-    return this.talk <= 0 && this.speed < (this.tractor ? 0.65 : 1.5)
-      && distance(this, player) < (this.tractor ? 3.8 : 3)
-      && Math.abs(this.y - player.y) < 1.8 && this.visibleTo(player);
+    return this.speed < (this.tractor ? 0.65 : 1.5) && this.withinConversation(player, this.tractor ? 3.8 : 3);
   }
 
-  action(day: number): string {
-    return this.lastDay === day && this.greetings === 1 ? 'ask for local advice' : `greet ${this.profile.name}`;
+  withinConversation(player: Vec3Like, reach = 5): boolean {
+    return distance(this, player) < reach && Math.abs(this.y - player.y) < 1.8 && this.visibleTo(player);
   }
 
-  acknowledge(seconds: number): void {
-    this.talk = seconds;
-    this.wave = 1.5;
+  perform(gesture: ResidentGesture, seconds: number): void {
+    this.gesture = gesture;
+    this.lineDuration = seconds;
+    this.lineAge = 0;
+    this.wave = 0;
     this.waveReady = false;
   }
 
-  greet(ctx: Greeting): string {
-    if (this.lastDay !== ctx.day) this.greetings = 0;
-    this.lastDay = ctx.day;
-    const visit = this.greetings++;
-    this.acknowledge(5.5);
-    if (visit === 0) {
-      if (ctx.hour >= 19 || ctx.hour < 6) return 'İyi akşamlar. I’m heading in soon. Mind yourself on the way home.';
-      if (this.yielding && this.tractor) return 'Selam, çoban. I’ll give you and your flock a little room.';
-      if (ctx.flockExposed) return 'Selam, çoban. I see you’ve got company today.';
-      return `${ctx.hour < 11 ? 'Günaydın' : 'Selam'}, çoban. ${this.settled ? this.destination.activity : `I’m on my way to ${this.destination.place}.`}`;
-    }
-    if (visit > 1) return 'Good to see you again. Kolay gelsin, çoban.';
+  routine(): string {
+    return this.settled ? this.destination.activity : `I’m on my way to ${this.destination.place}.`;
+  }
+
+  greeting(ctx: Greeting): string {
+    if (ctx.hour >= 19 || ctx.hour < 6) return 'İyi akşamlar, çoban. Mind yourself on the way home.';
+    if (this.yielding && this.tractor) return 'Selam, çoban. I’ll give you and your flock a little room.';
+    if (ctx.flockExposed) return 'Selam, çoban. I see you’ve got company today.';
+    return `${ctx.hour < 11 ? 'Günaydın' : 'Selam'}, çoban. ${this.routine()}`;
+  }
+
+  advice(ctx: Greeting): string {
     if (ctx.hour >= 18 && ctx.gateOpen) return 'It’ll be dark soon. Remember to latch the ağıl gate once the sheep are inside.';
     return {
       emre: 'The dirt road climbs to the lookout. On the muddy side, I’d leave the bike and walk.',
@@ -204,7 +208,7 @@ export class Resident {
     this.pz = this.z;
     this.previousYaw = this.yaw;
     this.wave = Math.max(0, this.wave - dt);
-    this.talk = Math.max(0, this.talk - dt);
+    this.lineAge += dt;
     const stop = this.stopAt(ctx.hour);
     const goal = this.circuit.atStop(stop.point);
     const left = (goal - this.progress + this.circuit.length) % this.circuit.length;
@@ -254,7 +258,7 @@ export class Resident {
     const slowed = this.profile.pace / (1 + corner * 1.9);
     const next = this.circuit.at(this.progress + Math.min(left, Math.max(0.5, this.speed * 0.55)));
     const routeOpen = this.clear(next.x, next.z);
-    const canGo = !this.settled && this.talk === 0 && routeOpen;
+    const canGo = !this.settled && !this.conversation && routeOpen;
     const targetSpeed = canGo && !this.yielding ? Math.min(slowed, Math.sqrt(left * 4)) : 0;
     const rate = targetSpeed > this.speed ? 1.9 : 5.2;
     this.speed += Math.max(-rate * dt, Math.min(rate * dt, targetSpeed - this.speed));
@@ -284,7 +288,7 @@ export class Resident {
       this.z = z;
     } else this.speed = 0;
 
-    const towardPlayer = playerDist < 9 && !ctx.rider && (this.talk > 0 || this.wave > 0 || this.yielding);
+    const towardPlayer = playerDist < 9 && !ctx.rider && (this.conversation || this.gesturing || this.wave > 0 || this.yielding);
     const facing = towardPlayer && !this.tractor ? Math.atan2(ctx.player.x - this.x, ctx.player.z - this.z) : yaw;
     this.yaw += angleDelta(this.yaw, facing) * Math.min(1, dt * 6);
     const glance = towardPlayer ? Math.max(-1.15, Math.min(1.15, angleDelta(this.yaw, Math.atan2(ctx.player.x - this.x, ctx.player.z - this.z)))) : 0;
@@ -326,12 +330,7 @@ export class Residents {
     }
   }
 
-  greet(resident: Resident, ctx: Greeting): void {
-    this.speak(resident, resident.greet(ctx));
-  }
-
-  speak(resident: Resident, text: string): void {
-    this.events.emit('encounter', { name: resident.profile.name, text });
+  greetSound(resident: Resident): void {
     this.events.emit('lifeSound', { kind: 'greet', x: resident.x, y: resident.y + (resident.tractor ? 2 : 1.5), z: resident.z });
   }
 }

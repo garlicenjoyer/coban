@@ -62,6 +62,7 @@ import { CoachView } from './ui/coachView';
 import { TitleScreen } from './ui/titleScreen';
 import { LifeView } from './life/lifeView';
 import { ErrandsView } from './life/errandsView';
+import { ResidentDialogueView } from './ui/residentDialogueView';
 
 async function main() {
   const params = new URLSearchParams(location.search);
@@ -215,6 +216,7 @@ async function main() {
   // A misfire pops, a skipping chain clanks.
   sim.events.on('bikeFault', (e) => atBike(e.kind === 'skip' ? 'thunk' : 'kickFail', e.kind === 'skip' ? 0.4 : 0.6));
   const wheel = new WhistleWheel(sim.events, () => 'Karabaş', () => sim.dog.bond);
+  const dialogueView = new ResidentDialogueView(input);
   const taskCard = new TaskCard(() => sim, sim.events, () => audio.chime());
   // The field kit: watch (T), compass (with barks and howls), tesbih at the ağıl, paper map (M).
   const fieldKit = new FieldKit(() => sim, sim.events, { tick: () => audio.tick(), bead: () => audio.bead() });
@@ -261,7 +263,8 @@ async function main() {
   // Esc / Start: the pause menu, with the controls and options.
   const pause = new PauseMenu({
     input,
-    cardOpen: () => !!title?.isOpen || paperMap.isOpen || shopView.isOpen || noteView.isOpen || satchel.cardOpen || taskCard.isJournalOpen,
+    cardOpen: () => !!title?.isOpen || paperMap.isOpen || shopView.isOpen || noteView.isOpen || satchel.cardOpen
+      || taskCard.isJournalOpen || dialogueView.isOpen,
     when: () => {
       const h = ((sim.hour % 24) + 24) % 24;
       const clock = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
@@ -391,7 +394,7 @@ async function main() {
       wolfView.update(alpha, dt * loop.timeScale);
       perf.lap('dog and wolves');
       {
-        const otherCard = shopView.isOpen || noteView.isOpen || satchel.cardOpen;
+        const otherCard = shopView.isOpen || noteView.isOpen || satchel.cardOpen || dialogueView.isOpen;
         const cardOpen = paperMap.isOpen || otherCard;
         coach.update({
           sim,
@@ -418,6 +421,8 @@ async function main() {
       economyView.update(sim);
       satchel.watchUp = document.getElementById('watch')?.classList.contains('up') ?? false;
       satchel.update();
+      dialogueView.update(sim.dialogue, pause.isOpen || !!title?.holding || paperMap.isOpen || noteView.isOpen
+        || shopView.isOpen || satchel.cardOpen || taskCard.isJournalOpen || input.wheelOpen);
       perf.lap('field kit and cards');
       tracks.update();
       works.update(playerView.leftHand, flockView.halterPoint);
@@ -431,7 +436,9 @@ async function main() {
       perf.lap('trails, works, terrain');
       gateAngle += ((sim.gateOpen ? Math.PI / 2 : 0) - gateAngle) * Math.min(1, dt * 8);
       gatePivot.rotation.y = gateAngle;
-      rig.update(playerView.renderPos, input, dt, sim.riding ? { heading: sim.bike.heading, speed: sim.bike.speed, lean: sim.bike.lean } : null);
+      const speaker = dialogueView.isOpen && Math.hypot(sim.player.vel.x, sim.player.vel.z) < 0.25 ? sim.dialogue?.resident : undefined;
+      rig.update(playerView.renderPos, input, dt, sim.riding ? { heading: sim.bike.heading, speed: sim.bike.speed, lean: sim.bike.lean } : null,
+        speaker && { x: speaker.x, y: speaker.y + (speaker.tractor ? 0.24 : 0), z: speaker.z });
       title?.applyCamera(rig.camera, dt);
       perf.lap('camera');
 

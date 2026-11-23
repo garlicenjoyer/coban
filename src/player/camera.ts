@@ -19,6 +19,9 @@ export class CameraRig {
   private zoom = config.camera.distance;
   private readonly pivot = new THREE.Vector3();
   private readonly desired = new THREE.Vector3();
+  private conversationBlend = 0;
+  private readonly conversationTarget = new THREE.Vector3();
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
 
   constructor(
     private R: Rapier,
@@ -45,7 +48,11 @@ export class CameraRig {
    * `bike` switches to the riding camera: it swings in behind the bike when you are not
    * steering the camera, pulls back and widens with speed, and rolls a little with the lean.
    */
-  update(target: THREE.Vector3, input: Input, dt: number, bike?: { heading: number; speed: number; lean: number } | null): void {
+  update(
+    target: THREE.Vector3, input: Input, dt: number,
+    bike?: { heading: number; speed: number; lean: number } | null,
+    speaker?: { x: number; y: number; z: number },
+  ): void {
     const c = config.camera;
     this.zoom = c.distance;
 
@@ -64,6 +71,15 @@ export class CameraRig {
       this.pitch += (14 * DEG - this.pitch) * Math.min(1, dt * 1.5);
     }
     if (bike) this.zoom = Math.max(c.distance, 5 + bike.speed * 0.08);
+    const frameSpeaker = speaker && !bike && !this.reducedMotion.matches && this.sinceLook > 0.7;
+    this.conversationBlend += (Number(!!frameSpeaker) - this.conversationBlend) * (1 - Math.exp(-dt * 4));
+    if (frameSpeaker) {
+      this.conversationTarget.set(speaker.x, speaker.y, speaker.z);
+      const heading = Math.atan2(target.x - speaker.x, target.z - speaker.z) + 0.24;
+      const difference = heading - this.yaw;
+      this.yaw += Math.atan2(Math.sin(difference), Math.cos(difference)) * Math.min(1, dt * 3.8);
+    }
+    if (!bike) this.zoom = THREE.MathUtils.lerp(this.zoom, 4.35, this.conversationBlend);
     this.pitch = THREE.MathUtils.clamp(this.pitch, c.pitchMinDeg * DEG, c.pitchMaxDeg * DEG);
 
     const sy = Math.sin(this.yaw);
@@ -76,6 +92,10 @@ export class CameraRig {
 
     const shoulder = bike ? 0 : c.shoulder;
     this.pivot.set(target.x + cy * shoulder, target.y + c.height + (bike ? 0.2 : 0), target.z - sy * shoulder);
+    const blend = this.conversationBlend * 0.62;
+    this.pivot.x = THREE.MathUtils.lerp(this.pivot.x, this.conversationTarget.x, blend);
+    this.pivot.y = THREE.MathUtils.lerp(this.pivot.y, this.conversationTarget.y + 1.15, blend);
+    this.pivot.z = THREE.MathUtils.lerp(this.pivot.z, this.conversationTarget.z, blend);
 
     // Spring arm: shorten when something is between the pivot and the camera.
     let allowed = this.zoom;

@@ -51,7 +51,7 @@ describe('valley life', () => {
     }
   });
 
-  it('yields to traffic, remembers a greeting and resumes when the way clears', () => {
+  it('yields to traffic and resumes its route after a conversation ends', () => {
     const events = new EventBus();
     const residents = new Residents(routes, terrain, obstacles, events);
     const tractor = residents.list[0];
@@ -60,18 +60,18 @@ describe('valley life', () => {
     for (let i = 0; i < 135; i++) residents.step(SIM_DT, { ...quiet, player: p, rider: true });
     expect(tractor.yielding).toBe(true);
     expect(tractor.speed).toBeLessThan(0.1);
-    const lines: string[] = [];
-    events.on('encounter', ({ text }) => lines.push(text));
-    const hello = { day: 1, hour: 10, gateOpen: false, flockExposed: false };
+    const hello = { hour: 10, gateOpen: false, flockExposed: false };
     const beside = { x: tractor.x + Math.cos(tractor.yaw) * 2, y: tractor.y, z: tractor.z - Math.sin(tractor.yaw) * 2 };
     expect(residents.near(beside)).toBe(tractor);
-    residents.greet(tractor, hello);
-    expect(residents.near(beside)).toBeUndefined();
-    for (let i = 0; i < 340; i++) residents.step(SIM_DT, { ...quiet, player: beside });
-    expect(tractor.action(1)).toContain('advice');
-    residents.greet(tractor, hello);
-    expect(lines[0]).toContain('room');
-    expect(lines[1]).toContain('lookout');
+    expect(tractor.greeting(hello)).toContain('room');
+    expect(tractor.advice(hello)).toContain('lookout');
+    tractor.conversation = true;
+    tractor.perform('explain', 2.5);
+    for (let i = 0; i < 340; i++) residents.step(SIM_DT, quiet);
+    expect(tractor.speed).toBe(0);
+    expect(tractor.conversation).toBe(true);
+    expect(tractor.speaking).toBe(false);
+    tractor.conversation = false;
     for (let i = 0; i < 560; i++) residents.step(SIM_DT, quiet);
     expect(tractor.speed).toBeGreaterThan(1);
   });
@@ -105,8 +105,7 @@ describe('valley life', () => {
       Object.assign(resident, { x: sim.player.pos.x + 1, y: sim.player.pos.y, z: sim.player.pos.z });
       const original = VALLEY_MAP.errands![0];
       sim.errands = new Errands([{ ...original, stops: [{ ...original.stops[0], x: sim.player.pos.x, z: sim.player.pos.z, seconds: undefined }] }]);
-      sim.errands.discuss(original.resident);
-      sim.errands.discuss(original.resident);
+      sim.errands.accept(original.resident);
       expect(sim.residents.near(sim.player.pos)).toBe(resident);
       const encounters: string[] = [];
       sim.events.on('encounter', (event) => encounters.push(event.name));
@@ -122,7 +121,7 @@ describe('valley life', () => {
   it('keeps declined work optional and lets all four accepted errands pay out once', () => {
     const sim = new Sim(RAPIER, terrain);
     const tap = () => sim.step({ ...emptyFrame(), interact: true, interactHeld: true });
-    const wait = (ticks: number) => { for (let i = 0; i < ticks; i++) sim.step(emptyFrame()); };
+    const say = (dialogue: NonNullable<ReturnType<typeof emptyFrame>['dialogue']>) => sim.step({ ...emptyFrame(), dialogue });
     const completeStop = (stop: NonNullable<typeof VALLEY_MAP.errands>[number]['stops'][number]) => {
       sim.teleport(stop.x, stop.z);
       if (!stop.seconds) return tap();
@@ -139,13 +138,26 @@ describe('valley life', () => {
         const approach = [[0, 2], [2, 0], [0, -2], [-2, 0]].map(([x, z]) => ({ x: x + resident.x, z: z + resident.z }))
           .find(({ x, z }) => !sim.obstacles.blocked(x, z, 0.6) && resident.canTalk({ x, z, y: terrain.heightAt(x, z) }))!;
         sim.teleport(approach.x, approach.z);
-        expect(sim.encounterPrompt).toContain('about an errand');
+        expect(sim.encounterPrompt).toContain('talk to');
         tap();
         expect(sim.errands.status(errand.resident)).toBeUndefined();
-        wait(112);
-        expect(sim.encounterPrompt).toContain('accept');
+        say('accept');
+        expect(sim.errands.status(errand.resident)).toBeUndefined();
+        say('errand');
+        expect(sim.dialogue?.offer).toBe(errand);
+        say('leave');
+        expect(sim.dialogue).toBeNull();
+        expect(sim.errands.status(errand.resident)).toBeUndefined();
         tap();
+        say('errand');
+        tap();
+        expect(sim.dialogue).toBeNull();
+        expect(sim.errands.status(errand.resident)).toBeUndefined();
+        tap();
+        say('errand');
+        say('accept');
         expect(sim.errands.status(errand.resident)).toBe(0);
+        expect(sim.dialogue?.text).toContain(errand.stops[0].place);
         const first = errand.stops[0];
         if (first.seconds) {
           sim.teleport(first.x, first.z);
@@ -158,6 +170,7 @@ describe('valley life', () => {
         for (const stop of errand.stops) completeStop(stop);
         expect(sim.errands.status(errand.resident)).toBe(errand.stops.length);
         tap();
+        say('leave');
       }
       expect(sim.tasks.task).toBe(task);
       expect(sim.economy.job).toEqual({ id: 'thyme' });
@@ -172,8 +185,7 @@ describe('valley life', () => {
     const sim = new Sim(RAPIER, terrain);
     try {
       const errand = VALLEY_MAP.errands!.find((e) => e.resident === 'zeynep')!;
-      sim.errands.discuss('zeynep');
-      sim.errands.discuss('zeynep');
+      sim.errands.accept('zeynep');
       const [pickup, drop] = errand.stops;
       sim.teleport(pickup.x, pickup.z);
       sim.step({ ...emptyFrame(), interact: true });
@@ -186,6 +198,28 @@ describe('valley life', () => {
       sim.step({ ...emptyFrame(), interact: true });
       expect(sim.errands.status('zeynep')).toBe(2);
       expect(sim.economy.ledger.filter((e) => e.text === errand.title)).toHaveLength(1);
+    } finally {
+      sim.world.free();
+    }
+  });
+
+  it('closes stale conversations on departure and keeps the gate available while talking', () => {
+    const sim = new Sim(RAPIER, terrain);
+    try {
+      const ayse = sim.residents.list.find((resident) => resident.id === 'ayse')!;
+      sim.dog.care.pettedToday = true;
+      sim.teleport(ayse.x + 1.5, ayse.z);
+      sim.step({ ...emptyFrame(), interact: true });
+      expect(sim.dialogue?.resident).toBe(ayse);
+      sim.step({ ...emptyFrame(), dialogue: 'advice' });
+      expect(sim.dialogue?.text).toContain('spring');
+      expect(ayse.gesture).toBe('explain');
+      sim.step({ ...emptyFrame(), dialogue: 'errand' });
+      sim.teleport(sim.gatePos.x + 1.4, sim.gatePos.z);
+      sim.step({ ...emptyFrame(), interact: true, dialogue: 'accept' });
+      expect(sim.dialogue).toBeNull();
+      expect(sim.errands.status('ayse')).toBeUndefined();
+      expect(sim.gateOpen).toBe(true);
     } finally {
       sim.world.free();
     }

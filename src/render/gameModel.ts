@@ -7,11 +7,15 @@ const loader = new GLTFLoader();
 export async function loadGameModel(filename: string): Promise<THREE.Group> {
   const { scene } = await loader.loadAsync(`${import.meta.env.BASE_URL}models/${filename}.glb`);
   const paint = toonMaterial({ vertexColors: true });
+  let skinPaint: THREE.MeshToonMaterial | undefined;
   const sourceMaterials = new Set<THREE.Material>();
   scene.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
     sourceMaterials.add(node.material as THREE.Material);
-    node.material = paint;
+    if (node instanceof THREE.SkinnedMesh) {
+      skinPaint ??= toonMaterial({ vertexColors: true, side: THREE.DoubleSide });
+      node.material = skinPaint;
+    } else node.material = paint;
     node.castShadow = node.receiveShadow = true;
   });
   for (const material of sourceMaterials) material.dispose();

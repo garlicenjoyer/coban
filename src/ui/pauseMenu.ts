@@ -25,7 +25,7 @@ const KEYBOARD: Group[] = [
       [['N'], 'Rest or sleep', 'once the day’s work is done'],
       [['Mouse'], 'Look around', 'click the view to capture the mouse'],
       [['Wheel'], 'Zoom the camera'],
-      [['E'], 'Interact · greet villagers · watch wildlife', 'hold E for longer jobs'],
+      [['E'], 'Interact · talk to villagers · watch wildlife', 'hold E for longer jobs'],
     ],
   },
   {
@@ -80,7 +80,7 @@ const GAMEPAD: Group[] = [
       [['Left stick'], 'Walk', 'a light tilt sneaks'],
       [['L3'], 'Sprint'],
       [['Right stick'], 'Camera'],
-      [['A'], 'Interact · greet villagers · watch wildlife', 'hold A for longer jobs'],
+      [['A'], 'Interact · talk to villagers · watch wildlife', 'hold A for longer jobs'],
     ],
   },
   {
