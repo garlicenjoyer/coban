@@ -1,5 +1,9 @@
 # Çoban — greybox prototype
 
+![Çoban — an Aegean shepherd game](press/readme-banner.png)
+
+Press kit (key art, logo, cards, screenshots): [press/](press/README.md)
+
 Third-person three.js prototype of an Aegean shepherd game. Greybox milestones done:
 **M0** foundations and test map, **M1** shepherd movement, camera, crook and call,
 **M2** flock herding (24 sheep, bellwether, grazing, strays, stuck sheep, pen gate),
