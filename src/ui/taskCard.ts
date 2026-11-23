@@ -117,6 +117,11 @@ export class TaskCard {
     });
   }
 
+  /** The notebook (J) is open. */
+  get isJournalOpen(): boolean {
+    return this.journalOpen;
+  }
+
   private flash(text: string, ms = 2200): void {
     this.banner.textContent = text;
     this.banner.style.opacity = '1';

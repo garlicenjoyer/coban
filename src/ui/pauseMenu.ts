@@ -136,6 +136,10 @@ export interface PauseHooks {
   setMusic(v: number): void;
   getDevOverlay(): boolean;
   setDevOverlay(on: boolean): void;
+  /** The coach: tutorial hints on/off, and forgetting what it taught. */
+  getHints(): boolean;
+  setHints(on: boolean): void;
+  resetHints(): void;
 }
 
 const SETTINGS_KEY = 'coban.settings';
@@ -179,6 +183,16 @@ export class PauseMenu {
         this.device = t.dataset.device as Device;
         this.render();
         this.focusFirst('[data-act=device][aria-selected=true]');
+      } else if (act === 'hints') {
+        this.hooks.setHints(!this.hooks.getHints());
+        this.render();
+        this.focusFirst('[data-act=hints]');
+      } else if (act === 'hintsReset') {
+        this.hooks.resetHints();
+        this.hooks.setHints(true);
+        this.hintsReset = true;
+        this.render();
+        this.focusFirst('[data-act=hintsReset]');
       } else if (act === 'dev') {
         this.hooks.setDevOverlay(!this.hooks.getDevOverlay());
         this.render();
@@ -237,6 +251,7 @@ export class PauseMenu {
   open(): void {
     if (this.isOpen) return;
     this.isOpen = true;
+    this.hintsReset = false;
     this.openedAt = performance.now();
     this.page = 'main';
     this.device = this.hooks.input.lastDevice;
@@ -295,6 +310,7 @@ export class PauseMenu {
   }
   private padA = false;
   private lastSlide = 0;
+  private hintsReset = false;
 
   private go(page: Page): void {
     const from = this.page;
@@ -376,6 +392,7 @@ export class PauseMenu {
       return `<label class="pz-opt"><span>${label}</span><input type="range" min="0" max="100" step="5" value="${pct}" data-vol="${id}" /><output>${pct}%</output></label>`;
     };
     const dev = this.hooks.getDevOverlay();
+    const hints = this.hooks.getHints();
     return `
       <header class="pz-head pz-sub">
         <button data-act="back" class="pz-back" aria-label="Back">‹</button>
@@ -386,6 +403,15 @@ export class PauseMenu {
           <h3>Sound</h3>
           ${slider('effects', 'Sounds &amp; ambience', this.hooks.getEffects())}
           ${slider('music', 'Music', this.hooks.getMusic())}
+        </section>
+        <section>
+          <h3>Learning</h3>
+          <button class="pz-opt pz-toggle" data-act="hints" role="switch" aria-checked="${hints}">
+            <span>Tutorial hints<small>show a control when it’s needed, until you’ve got the hang of it</small></span><i></i>
+          </button>
+          <button class="pz-opt pz-toggle pz-action" data-act="hintsReset">
+            <span>Teach me again<small>${this.hintsReset ? 'Done: every hint will show again' : 'forget what’s been learned and start the hints over'}</small></span><b>${this.hintsReset ? '✓' : '↺'}</b>
+          </button>
         </section>
         <section>
           <h3>Display</h3>

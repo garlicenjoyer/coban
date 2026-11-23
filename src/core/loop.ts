@@ -29,7 +29,8 @@ export class FixedLoop {
     this.last = performance.now();
     const frame = (now: number) => {
       if (!this.running) return;
-      const frameDt = Math.min((now - this.last) / 1000, 0.25);
+      // The first frame's timestamp can predate start() (a long load just ran): never negative.
+      const frameDt = Math.max(0, Math.min((now - this.last) / 1000, 0.25));
       this.last = now;
       this.acc += frameDt * this.timeScale;
       let steps = 0;

@@ -6,6 +6,7 @@ import { config } from '../core/config';
 import type { EventBus } from '../core/events';
 import type { WheelState } from '../core/input';
 import { commandInfo, COMMANDS } from '../dog/commands';
+import type { WheelGuide } from '../tutorial/coach';
 
 export class WhistleWheel {
   private el: HTMLDivElement;
@@ -13,6 +14,9 @@ export class WhistleWheel {
   private center: HTMLDivElement;
   private toast: HTMLDivElement;
   private toastUntil = 0;
+  /** Points from the centre at the slot the coach wants (it rotates; the slot angle). */
+  private arrow: HTMLDivElement;
+  private lastCenter = '';
 
   constructor(events: EventBus, private dogName: () => string, private bond: () => number) {
     this.el = document.createElement('div');
@@ -31,6 +35,10 @@ export class WhistleWheel {
     this.center = document.createElement('div');
     this.center.className = 'center';
     this.el.appendChild(this.center);
+    this.arrow = document.createElement('div');
+    this.arrow.className = 'garrow';
+    this.arrow.innerHTML = '<i></i>';
+    this.el.appendChild(this.arrow);
     document.body.appendChild(this.el);
 
     this.toast = document.createElement('div');
@@ -54,14 +62,37 @@ export class WhistleWheel {
     this.toastUntil = performance.now() + 2600;
   }
 
-  update(w: WheelState, gesture: boolean): void {
+  /**
+   * `guide`: the coach's help while learning: the wanted slot pulses, an arrow points at it
+   * from the centre, and the centre says what to do next (move toward it / let go).
+   */
+  update(w: WheelState, gesture: boolean, guide: WheelGuide | null = null, pad = false): void {
     this.el.style.display = w.open ? 'block' : 'none';
     if (performance.now() > this.toastUntil) this.toast.style.opacity = '0';
     if (!w.open) return;
-    this.slots.forEach((s, i) => s.classList.toggle('on', i === w.slot));
+    const gi = guide ? COMMANDS.findIndex((c) => c.id === guide.command) : -1;
+    this.slots.forEach((s, i) => {
+      s.classList.toggle('on', i === w.slot);
+      s.classList.toggle('guide', i === gi && i !== w.slot);
+    });
     const pick = w.slot >= 0 ? COMMANDS[w.slot] : null;
-    this.center.innerHTML = gesture
+    const onTarget = gi >= 0 && w.slot === gi;
+    this.arrow.style.display = gi >= 0 && !onTarget ? 'block' : 'none';
+    if (gi >= 0) this.arrow.style.transform = `rotate(${(gi / COMMANDS.length) * 360}deg)`;
+    const html = gesture
       ? `<div class="icon">✋</div><div>Gesture (silent)</div>${pick ? `<small>${pick.gesture}</small>` : ''}`
       : `<div class="icon">♪</div><div>Whistle</div>${pick ? `<small>${pick.whistle}</small>` : ''}`;
+    const coach =
+      gi < 0
+        ? ''
+        : onTarget
+          ? `<div class="coachline go">Now let go of ${pad ? 'LB' : 'Q'}</div>`
+          : `<div class="coachline">${pad ? 'Push the stick' : 'Move the mouse'} toward <b>${COMMANDS[gi].turkish}</b></div>`;
+    const key = html + coach;
+    if (key !== this.lastCenter) {
+      this.lastCenter = key;
+      this.center.innerHTML = key;
+    }
   }
+
 }

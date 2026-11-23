@@ -53,6 +53,8 @@ import { ShopView } from './ui/shopView';
 import { SatchelView } from './ui/satchelView';
 import { PauseMenu } from './ui/pauseMenu';
 import { ValleyProps } from './world/valleyProps';
+import { Coach } from './tutorial/coach';
+import { CoachView } from './ui/coachView';
 
 async function main() {
   const [shepherd, sheepModel, dogModel, bikeModel, wolfModel, propModels] = await Promise.all([
@@ -197,6 +199,10 @@ async function main() {
   const noteView = new NoteView(() => sim, sim.events);
   const satchel = new SatchelView(() => sim, sim.events, input);
   const shopView = new ShopView(() => sim, sim.events, input);
+  // The coach: each control taught when it's first needed, by doing it (Esc › Options).
+  const coach = new Coach();
+  coach.attach(sim.events, () => sim);
+  const coachView = new CoachView();
   sim.events.on('slingThrow', () => audio.sling());
   sim.events.on('slingHit', (e) => audio.thud(e.x, sim.terrain.heightAt(e.x, e.z) + 0.2, e.z));
   sim.events.on('dogHurt', () => audio.yelp(sim.dog.x, sim.dog.y + 0.6, sim.dog.z));
@@ -241,6 +247,9 @@ async function main() {
     setMusic: (v) => (music.volume = v),
     getDevOverlay: () => !document.body.classList.contains('hudoff'),
     setDevOverlay,
+    getHints: () => coach.enabled,
+    setHints: (on) => (coach.enabled = on),
+    resetHints: () => coach.reset(),
   });
 
   // Views read the *current* sim objects through getters: reset rebuilds the world and player.
@@ -347,7 +356,26 @@ async function main() {
       dogView.update(alpha, dt, dt * loop.timeScale);
       wolfView.update(alpha, dt * loop.timeScale);
       perf.lap('dog and wolves');
-      wheel.update(input.wheel, input.wheelOpen && sim.commandMode() === 'gesture');
+      {
+        const otherCard = shopView.isOpen || noteView.isOpen || satchel.cardOpen;
+        const cardOpen = paperMap.isOpen || otherCard;
+        coach.update({
+          sim,
+          device: input.lastDevice,
+          dt,
+          blocked: pause.isOpen || cardOpen || taskCard.isJournalOpen,
+          wheelOpen: input.wheelOpen,
+          wheelSlot: input.wheel.slot,
+          lastCommand: input.lastCommand,
+          mapOpen: paperMap.isOpen,
+          watchUp: document.getElementById('watch')?.classList.contains('up') ?? false,
+          journalOpen: taskCard.isJournalOpen,
+        });
+        // Over the map only the confirmation shows ("press it again to fold it away").
+        const card = coach.card;
+        coachView.update(card, pause.isOpen || otherCard || input.wheelOpen || (paperMap.isOpen && card?.phase !== 'done'));
+      }
+      wheel.update(input.wheel, input.wheelOpen && sim.commandMode() === 'gesture', coach.wheelGuide(), input.lastDevice === 'gamepad');
       taskCard.update(rig.yaw);
       fieldKit.update(rig.yaw);
       paperMap.update();
@@ -476,7 +504,7 @@ async function main() {
   }
 
   // Handy in the browser console while tuning.
-  Object.assign(window, { sim, config, rig, replay, trial, scenarios, input, postSettings, grassSettings, music, terrainView, renderer, bench, scene, post, daylight, grass });
+  Object.assign(window, { coach, sim, config, rig, replay, trial, scenarios, input, postSettings, grassSettings, music, terrainView, renderer, bench, scene, post, daylight, grass });
 }
 
 main().catch((err) => {
