@@ -626,7 +626,10 @@ export class Sim {
     const safe = (s: Sheep) => (atHut ? insideFold(s.x, s.z) : gateClosed && insidePen(s.x, s.z, -0.3));
     const exposed = sheep.filter((s) => !safe(s));
     const bond = Math.max(0, Math.min(100, this.dog.bond));
-    const pTake = nc.exposedTakeChance * (1 - nc.guardStrength * (bond / 100));
+    // The first night forgives: what was left out scatters (to be found in the morning),
+    // and the lesson is told, but nothing is taken while the shepherd is still learning.
+    const mercy = day === 1;
+    const pTake = mercy ? 0 : nc.exposedTakeChance * (1 - nc.guardStrength * (bond / 100));
     const taken: Sheep[] = [];
     const scattered: Sheep[] = [];
     let wounded = 0;
@@ -644,7 +647,7 @@ export class Sim {
     }
     let penLoss = false;
     // A reinforced ağıl holds whatever the bond.
-    if (!this.economy.has('pen') && gateClosed && bond < nc.penRiskBondBelow && exposed.length < sheep.length && taken.length < nc.maxTaken) {
+    if (!mercy && !this.economy.has('pen') && gateClosed && bond < nc.penRiskBondBelow && exposed.length < sheep.length && taken.length < nc.maxTaken) {
       if (r() < (nc.penRiskBondBelow - bond) / 100) {
         const victim = sheep.find((s) => safe(s) && !s.isLeader);
         if (victim) {
@@ -704,6 +707,7 @@ export class Sim {
             : atHut
               ? `All ${n} sheep folded at the hut; you slept beside them and Karabaş kept watch.`
               : `All ${n} sheep penned behind a closed gate; Karabaş kept watch.`;
+    const lesson = mercy && outside ? ' Karabaş drove the wolves off this first night. Next time, the ones left out may not come back.' : '';
     this.flock.remove(taken);
     this.scatteredLastNight = scattered;
     // A night's rest mends what the day wore down; the fold or pen mends more.
@@ -741,7 +745,7 @@ export class Sim {
       gateClosed,
       sleptAt: this.sleptAt,
       bond,
-      reason,
+      reason: reason + lesson,
       tracks,
       dog: dogNight,
       rain: rained,
@@ -934,8 +938,16 @@ export class Sim {
     if (d.lastNight) this.nightReports.set(d.day - 1, d.lastNight);
     this.scatteredLastNight = this.flock.sheep.filter((s) => d.scatteredIds.includes(s.id));
     this.startDay(d.day);
+    if (d.midday) {
+      // Part-way through the day: the clock, the tasks done, and the satchel as it was
+      // (waking at home refills it; coming back at noon doesn't).
+      this.hour = Math.min(d.midday.hour, SUNSET_HOUR + 0.5);
+      this.goldenHourAnnounced = this.hour >= GOLDEN_HOUR;
+      this.tasks.resumeAt(d.midday.task, d.midday.done, d.midday.t);
+      this.satchel.slots = d.satchel.map((s) => ({ id: s.id, uses: s.uses < 0 ? Infinity : s.uses }));
+    }
     this.teleport(d.player.x, d.player.z);
-    this.events.emit('loaded', { day: d.day });
+    this.events.emit('loaded', { day: d.day, hour: d.midday ? this.hour : undefined });
   }
 
   /** Throw away the physics world and rebuild everything from the same initial state. */

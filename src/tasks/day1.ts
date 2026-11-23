@@ -176,6 +176,7 @@ export const DAY1: TaskDef[] = [
   },
   {
     id: 'free',
+    resumeFrom: 'lost',
     title: 'Free her from the thorns',
     how: 'Stand next to her and hold E for 2 seconds.',
     start: (sim, st) => {
@@ -193,6 +194,7 @@ export const DAY1: TaskDef[] = [
   },
   {
     id: 'rejoin',
+    resumeFrom: 'lost',
     title: 'Bring her back to the flock',
     how: 'Call her (right-click) and walk back to the flock, or whistle “Ara” again and Karabaş will bring her.',
     start: (sim, st) => {

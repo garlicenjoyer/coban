@@ -93,7 +93,9 @@ export class TaskCard {
     events.on('tickPicked', (e) => this.flash(e.left ? `A tick off. ${e.left} to go` : 'The last tick off. He shakes himself and leans on your leg', 2400));
     events.on('bowlFilled', (e) => this.flash(`You fill his bowl · ${e.sackLeft} meals left in the sack`, 2400));
     events.on('dogFed', (e) => e.how === 'bowl' && this.flash('Karabaş eats from his bowl', 2000));
-    events.on('loaded', (e) => this.flash(`Welcome back. Day ${e.day}, morning`, 3200));
+    events.on('loaded', (e) =>
+      this.flash(e.hour === undefined ? `Welcome back. Day ${e.day}, morning` : `Welcome back. Day ${e.day}, ${clock(e.hour)}: where you left off`, 3200),
+    );
     events.on('milked', (e) => this.flash(`${e.litres} L of milk in the churn by the gate. Hold R at the bike beside it to load it, and sell it in the village before evening`, 4200));
     events.on('milkLoaded', (e) => this.flash(`The churn is on the rack: ${e.litres} L for Fatma Hanım’s dairy`, 3000));
     events.on('milkSoured', (e) => this.flash(`${e.litres} L of milk turned. Fresh milk sells the same day`, 3200));

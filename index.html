@@ -262,6 +262,52 @@
       #loading::after { content: ''; width: 120px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--leather), transparent) 0 0 / 50% 100% no-repeat, rgba(107,90,64,0.2); animation: load 1.2s ease-in-out infinite; }
       @keyframes load { from { background-position: -60px 0, 0 0; } to { background-position: 180px 0, 0 0; } }
 
+      /* ---------- the opening: title, the letter, then the camera comes down ---------- */
+      body.titling #left, body.titling #hint, body.titling #prompt, body.titling #coach, body.titling #satchel,
+      body.titling #toast, body.titling #taskdone, body.titling #watch, body.titling #compass, body.titling #tesbih { opacity: 0 !important; visibility: hidden; }
+      #title {
+        position: fixed; inset: 0; z-index: 1500; display: flex; align-items: flex-end; justify-content: flex-start;
+        padding: clamp(16px, 6vh, 64px) clamp(16px, 6vw, 88px); box-sizing: border-box;
+        background: linear-gradient(105deg, rgba(24, 19, 14, 0.62) 0%, rgba(24, 19, 14, 0.28) 38%, rgba(24, 19, 14, 0) 62%),
+                    linear-gradient(0deg, rgba(24, 19, 14, 0.45), rgba(24, 19, 14, 0) 45%);
+        opacity: 0; transition: opacity 0.6s;
+      }
+      #title.up { opacity: 1; }
+      #title button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+      #title button:focus { outline: none; }
+      #title button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+      .tt-card { width: min(440px, 100%); color: var(--cream); }
+      .tt-kicker { font: 650 11.5px var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--cream-dim); }
+      .tt-card h1 { margin: 6px 0 14px; font: 700 clamp(52px, 9vw, 84px)/0.95 var(--serif); letter-spacing: 0.01em; text-shadow: 0 2px 18px rgba(0,0,0,0.35); }
+      .tt-line { margin: 0 0 26px; max-width: 34ch; font: italic 17px/1.45 var(--serif); color: var(--cream); text-wrap: pretty; }
+      .tt-line span { display: block; margin-top: 6px; font: 600 12.5px var(--sans); font-style: normal; color: var(--cream-dim); }
+      .tt-line span::before { content: '— '; }
+      .tt-acts { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; }
+      .tt-acts button, .tt-letter button {
+        display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
+        padding: 11px 18px; border-radius: 10px; font: 600 15px var(--sans) !important;
+        background: rgba(246, 240, 228, 0.12); border: 1px solid rgba(246, 240, 228, 0.3); color: var(--cream);
+        backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); transition: background 0.15s, transform 0.15s;
+      }
+      .tt-acts button:hover { background: rgba(246, 240, 228, 0.22); }
+      #title .tt-primary { min-width: 200px; background: var(--leather); border-color: var(--leather-dark); color: var(--paper-1); box-shadow: 0 2px 0 var(--leather-dark), var(--shadow-soft); }
+      #title .tt-primary:hover { background: #9a673f; transform: translateY(-1px); }
+      #title .tt-primary small { font: 500 12px var(--sans); opacity: 0.8; }
+      .tt-foot { margin: 22px 0 0; font: italic 13px var(--serif); color: var(--cream-dim); }
+      .tt-letter {
+        position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(1.2deg);
+        width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; box-sizing: border-box; padding: 22px 26px 20px;
+        color: #33302c; background: linear-gradient(176deg, #f3ecda, #e8dcbf); border-radius: 3px; box-shadow: 0 14px 40px rgba(0,0,0,0.5);
+        font: 17px/1.45 'Bradley Hand', 'Noteworthy', 'Segoe Print', 'Comic Sans MS', cursive; animation: tt-letter 0.45s cubic-bezier(.2,.8,.3,1);
+      }
+      .tt-letter .where { font: italic 12px var(--serif); color: #8a7655; }
+      .tt-letter h3 { margin: 2px 0 10px; font-size: 22px; font-weight: 600; }
+      .tt-letter p { margin: 0 0 10px; }
+      .tt-letter .sig { text-align: right; margin: -2px 0 16px; }
+      .tt-letter button { width: 100%; align-items: center; }
+      @keyframes tt-letter { from { opacity: 0; transform: translate(-50%, -46%) rotate(2.5deg) scale(0.97); } }
+      @media (prefers-reduced-motion: reduce) { #title, .tt-letter { transition: none; animation: none; } }
+
       /* ---------- the coach: a control taught when it's needed ---------- */
       #coach {
         position: fixed; left: 50%; bottom: 112px; z-index: 30; box-sizing: border-box;

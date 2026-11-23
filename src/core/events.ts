@@ -78,7 +78,7 @@ export interface GameEvents {
   /** You picked a tick off him. */
   tickPicked: { left: number };
   /** A save was restored: the morning of this day. */
-  loaded: { day: number };
+  loaded: { day: number; hour?: number };
   /** E at a shop counter: open its card. */
   shopOpen: { shop: string };
   /** A trade went through (or why it didn't). */

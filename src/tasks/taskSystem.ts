@@ -21,6 +21,11 @@ export interface TaskDef {
   /** How to do it, in plain words with the controls. */
   how: string;
   start?(sim: Sim, st: TaskState): void;
+  /**
+   * Loading a mid-day save inside this task: start again from that task instead (its
+   * setup lives there, e.g. the lost ewe is put in the thorns by 'lost', not by 'free').
+   */
+  resumeFrom?: string;
   update(sim: Sim, st: TaskState): TaskProgress;
 }
 
@@ -88,6 +93,24 @@ export class TaskSystem {
     if (!task) return;
     task.start?.(this.sim, this.state);
     this.sim.events.emit('taskStarted', { id: task.id, index: this.index });
+  }
+
+  /**
+   * Pick the day up where a mid-day save left it: tasks before `index` are done (at the
+   * times recorded), and `index` starts afresh on the next step.
+   */
+  resumeAt(index: number, done: TaskRecord[], t: number): void {
+    let i = Math.max(0, Math.min(index, this.tasks.length));
+    for (let guard = 0; guard < this.tasks.length; guard++) {
+      const back = this.tasks[i]?.resumeFrom;
+      const j = back ? this.tasks.findIndex((x) => x.id === back) : -1;
+      if (j < 0 || j >= i) break;
+      i = j;
+    }
+    this.index = i;
+    this.done.splice(0, this.done.length, ...done.filter((d) => this.tasks.findIndex((x) => x.id === d.id) < i));
+    this.t = t;
+    this.started = false;
   }
 
   /** Skip the current task (debug). */

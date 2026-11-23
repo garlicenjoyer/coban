@@ -11,6 +11,7 @@ import type { Personality } from '../flock/sheep';
 import type { ItemId } from '../player/satchel';
 import type { HerbId, LedgerLine } from '../economy/economy';
 import { activeMap } from '../world/map';
+import { SUNSET_HOUR } from './config';
 
 export const SAVE_KEY = 'coban.save.v1';
 export const SAVE_VERSION = 1;
@@ -59,6 +60,12 @@ export interface SaveData {
   visited: string[];
   lastNight: NightReport | null;
   scatteredIds: number[];
+  /**
+   * A checkpoint inside a day (after each task, and on leaving the page): where the day
+   * had got to. Absent in a dawn save. Wolves, the lost ewe and timers are not kept: the
+   * task they belong to starts again.
+   */
+  midday?: { hour: number; task: number; t: number; done: { id: string; title: string; doneAt: number }[] };
 }
 
 // ---------- byte packing for the grass maps (0..1 floats → one byte each, base64) ----------
@@ -80,8 +87,11 @@ function unpack(text: string, into: Float32Array): void {
 
 const round = (v: number, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
 
-/** What to save of the world as it is now (call at dawn, after the day has started). */
-export function snapshot(sim: Sim): SaveData {
+/**
+ * What to save of the world as it is now: at dawn, after the day has started, or with
+ * `midday` a checkpoint part-way through the day.
+ */
+export function snapshot(sim: Sim, opts: { midday?: boolean } = {}): SaveData {
   const e = sim.economy;
   const d = sim.dog;
   const b = sim.bike;
@@ -154,6 +164,9 @@ export function snapshot(sim: Sim): SaveData {
     visited: [...sim.visited],
     lastNight: sim.nightReport(sim.tasks.day - 1) ?? null,
     scatteredIds: sim.scatteredIds,
+    ...(opts.midday
+      ? { midday: { hour: round(sim.hour, 4), task: sim.tasks.index, t: round(sim.tasks.t, 2), done: sim.tasks.done.map((d) => ({ ...d })) } }
+      : {}),
   };
 }
 
@@ -161,6 +174,11 @@ export function snapshot(sim: Sim): SaveData {
 export function usable(data: unknown): data is SaveData {
   const d = data as SaveData | null;
   return !!d && d.v === SAVE_VERSION && d.map === activeMap().id && Array.isArray(d.sheep);
+}
+
+/** Can the day be checkpointed now? Not at night, nor once the day's tasks are done. */
+export function canCheckpoint(sim: Sim): boolean {
+  return sim.tasks.enabled && !sim.tasks.finished && !sim.nightWatchActive && sim.hour < SUNSET_HOUR + 0.5;
 }
 
 export { pack as packGrass, unpack as unpackGrass };

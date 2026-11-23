@@ -6,7 +6,7 @@ import Stats from 'three/examples/jsm/libs/stats.module.js';
 import { config } from './core/config';
 import { Input } from './core/input';
 import { FixedLoop } from './core/loop';
-import { SAVE_KEY, snapshot, usable } from './core/save';
+import { canCheckpoint, SAVE_KEY, snapshot, usable } from './core/save';
 import { Bench, perf } from './debug/bench';
 import { Replay } from './debug/replay';
 import { Scenarios } from './debug/scenarios';
@@ -53,8 +53,10 @@ import { ShopView } from './ui/shopView';
 import { SatchelView } from './ui/satchelView';
 import { PauseMenu } from './ui/pauseMenu';
 import { ValleyProps } from './world/valleyProps';
+import { HerdingCues, herdingCueSettings } from './world/herdingCues';
 import { Coach } from './tutorial/coach';
 import { CoachView } from './ui/coachView';
+import { TitleScreen } from './ui/titleScreen';
 
 async function main() {
   const [shepherd, sheepModel, dogModel, bikeModel, wolfModel, propModels] = await Promise.all([
@@ -163,6 +165,9 @@ async function main() {
   const flockView = new FlockView(() => sim.flock, sheepModel, groundAt);
   scene.add(flockView.root);
   const dogView = new DogView(scene, () => sim.dog, sim.events, dogModel, groundAt);
+  // What the call and the crook reach, and which sheep are following.
+  const herding = new HerdingCues(sim.events, groundAt, () => sim.flock.sheep, config.flock.call.followSeconds);
+  scene.add(herding.root);
   const wolfView = new WolfView(() => sim.wolves, wolfModel, groundAt);
   scene.add(wolfView.root);
   const bikeView = new BikeView(() => sim.bike, bikeModel);
@@ -232,10 +237,13 @@ async function main() {
     if (e.code !== 'Backquote' || e.repeat) return;
     setDevOverlay(document.body.classList.contains('hudoff'));
   });
+  // The opening (title, Uncle Ahmet's letter, the camera coming down): made once the save
+  // is loaded, at the end of main(). ?notitle skips it.
+  let title: TitleScreen | null = null;
   // Esc / Start: the pause menu, with the controls and options.
   const pause = new PauseMenu({
     input,
-    cardOpen: () => paperMap.isOpen || shopView.isOpen || noteView.isOpen || satchel.cardOpen,
+    cardOpen: () => !!title?.isOpen || paperMap.isOpen || shopView.isOpen || noteView.isOpen || satchel.cardOpen,
     when: () => {
       const h = ((sim.hour % 24) + 24) % 24;
       const clock = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
@@ -333,7 +341,7 @@ async function main() {
       // The whistle wheel slows the world to half speed while it is open.
       // The pause menu stops it altogether.
       pause.update();
-      loop.timeScale = pause.isOpen ? 0 : config.time.timeScale * (input.wheelOpen ? 0.5 : 1);
+      loop.timeScale = pause.isOpen || title?.holding ? 0 : config.time.timeScale * (input.wheelOpen ? 0.5 : 1);
       document.body.classList.toggle('pad', input.lastDevice === 'gamepad');
       // The bottom hint shows only while it's needed: the first seconds, while the mouse
       // has to be clicked to take the camera, or until drag-to-look has been tried once.
@@ -352,6 +360,7 @@ async function main() {
       if (riding) rumble(Math.min(1, Math.abs(bk.beta) * 2 + bk.wheelspin), Math.min(1, bk.speed / 25) * 0.3);
       perf.lap('shepherd and bike');
       flockView.update(alpha, dt, performance.now() / 1000, dt * loop.timeScale, playerView.milkingSubject);
+      herding.update(dt * loop.timeScale, alpha);
       perf.lap('flock');
       dogView.update(alpha, dt, dt * loop.timeScale);
       wolfView.update(alpha, dt * loop.timeScale);
@@ -363,7 +372,7 @@ async function main() {
           sim,
           device: input.lastDevice,
           dt,
-          blocked: pause.isOpen || cardOpen || taskCard.isJournalOpen,
+          blocked: pause.isOpen || !!title?.holding || cardOpen || taskCard.isJournalOpen,
           wheelOpen: input.wheelOpen,
           wheelSlot: input.wheel.slot,
           lastCommand: input.lastCommand,
@@ -398,6 +407,7 @@ async function main() {
       gateAngle += ((sim.gateOpen ? Math.PI / 2 : 0) - gateAngle) * Math.min(1, dt * 8);
       gatePivot.rotation.y = gateAngle;
       rig.update(playerView.renderPos, input, dt, sim.riding ? { heading: sim.bike.heading, speed: sim.bike.speed, lean: sim.bike.lean } : null);
+      title?.applyCamera(rig.camera, dt);
       perf.lap('camera');
 
       if (colliderLines.visible) {
@@ -474,9 +484,9 @@ async function main() {
   perfFolder.close();
 
   // ---------- saving (6b): at every dawn; loaded on start unless ?new ----------
-  const writeSave = (why: string) => {
+  const writeSave = (why: string, midday = false) => {
     try {
-      const data = snapshot(sim);
+      const data = snapshot(sim, { midday });
       localStorage.setItem(SAVE_KEY, JSON.stringify(data));
       saveCtl.status = `saved day ${data.day} (${why}) · ${new Date().toLocaleTimeString()}`;
     } catch (err) {
@@ -485,17 +495,35 @@ async function main() {
   };
   const saveCtl = { status: 'no save yet' };
   sim.events.on('slept', () => writeSave('dawn'));
+  // Checkpoints inside the day, so a first Day 1 cut short isn't lost: after every task,
+  // and whenever the page is hidden or closed. (The dawn save still writes a clean morning.)
+  sim.events.on('taskDone', () => {
+    // taskDone fires before the list moves on to the next task: save once the step is over.
+    queueMicrotask(() => {
+      if (canCheckpoint(sim)) writeSave('after a task', true);
+    });
+  });
+  const leaving = () => {
+    if (canCheckpoint(sim) && sim.tick > 60 * 20) writeSave('on leaving', true);
+  };
+  window.addEventListener('pagehide', leaving);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') leaving();
+  });
   const saveFolder = debug.gui.addFolder('Save');
   saveFolder.add({ save: () => writeSave('by hand') }, 'save').name('Save now');
   saveFolder.add({ fresh: () => { try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ } location.search = '?new'; } }, 'fresh').name('New game (forget the save)');
   saveFolder.add(saveCtl, 'status').name('save').listen().disable();
   saveFolder.close();
+  let resumed: { day: number; clock: string } | null = null;
   if (!new URLSearchParams(location.search).has('new')) {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       const data = raw ? JSON.parse(raw) : null;
       if (usable(data)) {
         sim.restore(data);
+        const h = ((sim.hour % 24) + 24) % 24;
+        resumed = { day: sim.tasks.day, clock: `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}` };
         saveCtl.status = `loaded day ${data.day} (saved ${new Date(data.savedAt).toLocaleString()})`;
       }
     } catch (err) {
@@ -503,8 +531,26 @@ async function main() {
     }
   }
 
+  if (!new URLSearchParams(location.search).has('notitle')) {
+    title = new TitleScreen({
+      canvas,
+      groundAt,
+      resumed,
+      readLetter: () => sim.notesRead.add('letter'),
+      newGame: () => {
+        try {
+          localStorage.removeItem(SAVE_KEY);
+        } catch {
+          /* ignore */
+        }
+        location.search = '?new';
+      },
+      onPlay: () => input.releaseAll(),
+    });
+  }
+
   // Handy in the browser console while tuning.
-  Object.assign(window, { coach, sim, config, rig, replay, trial, scenarios, input, postSettings, grassSettings, music, terrainView, renderer, bench, scene, post, daylight, grass });
+  Object.assign(window, { coach, herdingCueSettings, sim, config, rig, replay, trial, scenarios, input, postSettings, grassSettings, music, terrainView, renderer, bench, scene, post, daylight, grass });
 }
 
 main().catch((err) => {
