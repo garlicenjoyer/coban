@@ -14,6 +14,7 @@ import { Trial } from './debug/trial';
 import { GameAudio } from './audio/audio';
 import { Ambience } from './audio/ambience';
 import { ValleyLifeAudio } from './audio/valleyLifeAudio';
+import { ResidentVoiceAudio } from './audio/residentVoiceAudio';
 import { commandInfo } from './dog/commands';
 import { DogView } from './dog/dogView';
 import { BikeView } from './bike/bikeView';
@@ -195,6 +196,7 @@ async function main() {
   // Sound: whistles from the shepherd, barks from where the dog is.
   const audio = new GameAudio();
   const lifeAudio = new ValleyLifeAudio(audio);
+  const residentVoice = new ResidentVoiceAudio(audio);
   // The land's own sound: cicadas, crickets, the owl, sheep bells, the ezan from the village.
   const ambience = new Ambience(audio);
   sim.events.on('howl', (e) => audio.howl(e.x, sim.terrain.heightAt(e.x, e.z) + 2, e.z));
@@ -291,6 +293,7 @@ async function main() {
     (success) => atBike(success ? 'kick' : 'kickFail'));
   const rig = new CameraRig(RAPIER, () => sim.world, () => sim.player.collider, groundAt, canvas);
   sim.events.on('lifeSound', (e) => lifeAudio.call(e.kind, e, rig.camera.position));
+  sim.events.on('workSound', (e) => lifeAudio.work(e.kind, e, rig.camera.position));
 
   // ---------- debug ----------
   const colliderLines = new THREE.LineSegments(
@@ -457,6 +460,7 @@ async function main() {
       cam.getWorldDirection(fwd);
       audio.setListener(cam.position.x, cam.position.y, cam.position.z, fwd.x, fwd.y, fwd.z);
       lifeAudio.update(sim.residents, cam.position, loop.timeScale === 0);
+      residentVoice.update(dialogueView.isOpen ? sim.dialogue : null, sim.residents.list, cam.position, loop.timeScale === 0);
       const mi = layout.village?.minaret;
       ambience.update(dt, {
         hour: sim.hour,

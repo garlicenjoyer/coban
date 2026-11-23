@@ -1,6 +1,7 @@
 import { MathUtils } from 'three';
 import type { ResidentId } from '../world/mapTypes';
 import type { ResidentGesture } from './dialogue';
+import { workCycle, type WorkPose } from './residentWork';
 
 const { lerp, smoothstep } = MathUtils;
 
@@ -97,7 +98,7 @@ const sort: Clip = [
   [2.28, { bow: 0.29, twist: 0.24, nod: 0.45, right: -0.58, rightOut: 0.25, rightBend: -0.54, left: -0.38, leftBend: -0.55 }],
   [2.78, { bow: 0.42, nod: 0.53, right: -0.69, rightOut: 0.39, rightBend: -0.17, left: -0.37, leftBend: -0.52, wrist: 0.26 }],
   [3.44, { bow: 0.24, nod: 0.36, right: -0.31, rightBend: -0.30, left: -0.30, leftBend: -0.42 }],
-  [4.0, { bow: 0.21, nod: 0.30, left: -0.33, right: -0.39, rightBend: -0.27, leftBend: -0.43 }],
+  [workCycle.sort, { bow: 0.21, nod: 0.30, left: -0.33, right: -0.39, rightBend: -0.27, leftBend: -0.43 }],
 ];
 
 const sweepBase = { bow: 0.17, nod: 0.28, right: -0.27, rightOut: 0.22, rightBend: -0.42, left: -0.39, leftBend: -0.43 };
@@ -110,7 +111,7 @@ const sweep: Clip = [
   [2.0, { ...sweepBase, bow: 0.235, twist: -0.23, rightOut: 0.39, nod: 0.33, wrist: -0.27 }],
   [2.71, { ...sweepBase, bow: 0.29, twist: 0.26, right: -0.46, rightOut: 0.11, wrist: 0.38 }],
   [3.08, { ...sweepBase, bow: 0.13, nod: 0.1, wrist: 0.12 }],
-  [3.62, sweepBase],
+  [workCycle.sweep, sweepBase],
 ];
 
 const tea: Clip = [
@@ -118,7 +119,7 @@ const tea: Clip = [
   [1.72, { right: -0.76, rightBend: -1.64, tilt: -0.085, nod: 0.15, wrist: -0.23 }],
   [2.36, { right: -0.77, rightBend: -1.70, tilt: -0.10, nod: 0.10, wrist: -0.34 }],
   [2.98, { right: -0.35, rightBend: -0.97, nod: 0.17, wrist: -0.11 }],
-  [4.01, { right: -0.25, rightBend: -0.76, look: -0.22 }], [5.5, { right: -0.22, rightBend: -0.70 }],
+  [4.01, { right: -0.25, rightBend: -0.76, look: -0.22 }], [workCycle.tea, { right: -0.22, rightBend: -0.70 }],
 ];
 
 const check: Record<'emre' | 'zeynep', Clip> = {
@@ -126,13 +127,13 @@ const check: Record<'emre' | 'zeynep', Clip> = {
     [0, {}], [0.65, { bow: 0.19, twist: -0.28, look: -0.48, nod: 0.37, right: 0.44, rightOut: 0.16, release: 1 }],
     [1.81, { bow: 0.26, twist: -0.33, look: -0.59, nod: 0.54, right: 0.56, rightOut: 0.27, release: 1 }],
     [2.62, { twist: -0.17, look: -0.25, nod: 0.21, right: 0.22, release: 0.5 }],
-    [3.28, {}], [5.7, {}],
+    [3.28, {}], [workCycle.emre, {}],
   ],
   zeynep: [
     [0, {}], [0.88, { twist: -0.37, look: -0.52, tilt: 0.08, right: 0.50, rightOut: 0.26, rightBend: 0.36, release: 1 }],
     [1.64, { twist: -0.58, look: -0.75, nod: 0.21, right: 0.74, rightOut: 0.34, rightBend: 0.38, release: 1 }],
     [2.18, { twist: -0.51, look: -0.63, nod: 0.10, right: 0.56, rightOut: 0.38, release: 1 }],
-    [3.26, { twist: 0.19, look: 0.23, nod: 0.21, right: 0.12, release: 0.32 }], [4, {}], [6.4, {}],
+    [3.26, { twist: 0.19, look: 0.23, nod: 0.21, right: 0.12, release: 0.32 }], [4, {}], [workCycle.zeynep, {}],
   ],
 };
 
@@ -143,7 +144,7 @@ export function residentGesture(id: ResidentId, cue: ResidentGesture, age: numbe
   return sample(explain[id], age * (cue === 'offer' ? 0.84 : 1));
 }
 
-export function residentWork(id: ResidentId, work: 'sort' | 'sweep' | 'tea' | 'check', elapsed: number): GesturePose {
+export function residentWork(id: ResidentId, work: WorkPose, elapsed: number): GesturePose {
   if (work === 'sort') return sample(sort, elapsed, true);
   if (work === 'sweep') return sample(sweep, elapsed, true);
   if (work === 'tea') return sample(tea, elapsed, true);

@@ -1,16 +1,18 @@
 import type { GameAudio } from './audio';
 import type { LifeSound, Vec3Like } from '../core/events';
 import type { ResidentId, Residents } from '../life/residents';
+import type { WorkSound } from '../life/residentWork';
+import { playResidentFoley } from './residentFoley';
 
 type AudioBus = NonNullable<ReturnType<GameAudio['context']>>;
 
-function position(pan: PannerNode, point: Vec3Like, lift = 0): void {
+export function position(pan: PannerNode, point: Vec3Like, lift = 0): void {
   pan.positionX.value = point.x;
   pan.positionY.value = point.y + lift;
   pan.positionZ.value = point.z;
 }
 
-function spatial({ ctx, master }: AudioBus, point: Vec3Like, refDistance: number): PannerNode {
+export function spatial({ ctx, master }: AudioBus, point: Vec3Like, refDistance: number): PannerNode {
   const pan = ctx.createPanner();
   pan.panningModel = 'HRTF';
   pan.distanceModel = 'inverse';
@@ -26,7 +28,6 @@ const phrases: Partial<Record<LifeSound, readonly Note[]>> = {
   swallow: [[2970, 4140, 0, 0.062, 0.038], [4290, 3220, 0.105, 0.08, 0.04], [3400, 2250, 0.2, 0.12, 0.025]],
   hoopoe: [[525, 484, 0, 0.14, 0.14], [524, 475, 0.22, 0.14, 0.13], [503, 457, 0.44, 0.17, 0.10]],
   fox: [[834, 420, 0, 0.24, 0.09], [745, 295, 0.33, 0.30, 0.07]],
-  greet: [[156, 184, 0, 0.15, 0.06], [176, 129, 0.16, 0.23, 0.065]],
 };
 
 export class ValleyLifeAudio {
@@ -47,7 +48,7 @@ export class ValleyLifeAudio {
     if (!bus || this.audio.volume === 0) return;
     const { ctx, noise } = bus;
     const startAt = ctx.currentTime + 0.012;
-    const pan = spatial(bus, point, kind === 'greet' ? 3.5 : kind === 'fox' ? 16 : 8);
+    const pan = spatial(bus, point, kind === 'fox' ? 16 : 8);
 
     const notes = phrases[kind];
     if (notes) {
@@ -55,7 +56,7 @@ export class ValleyLifeAudio {
       for (const [i, [start, end, delay, length, volume]] of notes.entries()) {
         const t = startAt + delay;
         const osc = ctx.createOscillator();
-        osc.type = kind === 'fox' || kind === 'greet' ? 'triangle' : 'sine';
+        osc.type = kind === 'fox' ? 'triangle' : 'sine';
         osc.frequency.setValueAtTime(start * detune, t);
         osc.frequency.exponentialRampToValueAtTime(end * detune, t + length);
         const amp = ctx.createGain();
@@ -100,6 +101,14 @@ export class ValleyLifeAudio {
       if (i === taps - 1) src.onended = () => pan.disconnect();
       src.start(t, Math.random() * 0.36, 0.09);
     }
+  }
+
+  work(kind: WorkSound, point: Vec3Like, listener: Vec3Like): void {
+    if (this.audio.volume === 0 || Math.hypot(point.x - listener.x, point.z - listener.z) > 24) return;
+    const bus = this.audio.context();
+    if (!bus) return;
+    const refDistance = kind === 'teaSip' ? 2.2 : kind === 'broom' ? 4.4 : 3.6;
+    playResidentFoley(bus.ctx, bus.noise, spatial(bus, point, refDistance), kind);
   }
 
   update(residents: Residents, listener: Vec3Like, paused: boolean): void {

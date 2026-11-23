@@ -6,6 +6,7 @@ export const VALLEY_ERRANDS = [
     title: 'Olives in the nets',
     offer: 'There are windfalls in the nets above the grove. Could you gather both baskets and leave them at the head of the path?',
     thanks: 'Ayşe has both baskets for the press.',
+    completedReply: 'I’ve got both baskets for the press. Thank you.',
     reward: 22,
     stops: [
       { x: -327, z: 286, place: 'the west olive net', action: 'gather olives from the first net', note: 'One basket filled.', prop: 'olives', seconds: 1.5 },

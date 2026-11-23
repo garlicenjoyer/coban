@@ -3,6 +3,7 @@ import type { ResidentId, ResidentStop, ValleyRoute, V2 } from '../world/mapType
 import type { Obstacles } from '../world/obstacles';
 import type { Terrain } from '../world/terrain';
 import type { ResidentGesture } from './dialogue';
+import { workSounds, type WorkPose } from './residentWork';
 
 const profiles = {
   emre: { name: 'Emre', model: 'Rust Tractor', pace: 4.1, trade: 'Terrace farmer' },
@@ -108,6 +109,7 @@ export class Resident {
   private waveReady = true;
   conversation = false;
   lineAge = Infinity;
+  workTime = 0;
   gesture: ResidentGesture = 'greet';
   private lineDuration = 0;
 
@@ -144,6 +146,7 @@ export class Resident {
     this.offset = this.shoulder = this.speed = this.wave = this.glance = 0;
     this.conversation = false;
     this.lineAge = Infinity;
+    this.workTime = 0;
     this.yielding = false;
     this.waveReady = true;
     this.settled = true;
@@ -152,6 +155,9 @@ export class Resident {
 
   get speaking(): boolean { return this.lineAge < this.lineDuration && this.gesture !== 'farewell'; }
   get gesturing(): boolean { return this.lineAge < this.lineDuration; }
+  get workPose(): WorkPose | undefined {
+    if (this.settled && !this.conversation && !this.gesturing && this.wave === 0) return this.destination.pose;
+  }
 
   private clear(x: number, z: number): boolean {
     return !this.obstacles.blocked(x, z, this.clearance);
@@ -212,6 +218,7 @@ export class Resident {
     const stop = this.stopAt(ctx.hour);
     const goal = this.circuit.atStop(stop.point);
     const left = (goal - this.progress + this.circuit.length) % this.circuit.length;
+    if (stop !== this.destination) this.workTime = 0;
     this.destination = stop;
     this.settled = left < 0.001;
     this.parked = this.tractor && this.settled;
@@ -299,6 +306,7 @@ export class Resident {
       this.pitch = Math.atan2(this.terrain.heightAt(this.x - sx, this.z - sz) - this.terrain.heightAt(this.x + sx, this.z + sz), 2);
       this.roll = Math.atan2(this.terrain.heightAt(this.x + sz * 0.7, this.z - sx * 0.7) - this.terrain.heightAt(this.x - sz * 0.7, this.z + sx * 0.7), 1.4);
     }
+    if (this.workPose) this.workTime += dt;
   }
 }
 
@@ -324,13 +332,20 @@ export class Residents {
   step(dt: number, ctx: Context): void {
     for (const resident of this.list) {
       const foot = Math.floor(resident.travel / 0.57);
+      const workTime = resident.workTime;
       resident.step(dt, ctx);
-      if (!resident.tractor && Math.floor(resident.travel / 0.57) !== foot && distance(ctx.player, resident) < 16)
+      const range = distance(ctx.player, resident);
+      if (!resident.tractor && Math.floor(resident.travel / 0.57) !== foot && range < 16)
         this.events.emit('lifeSound', { kind: 'step', x: resident.x, y: resident.y, z: resident.z });
+      const pose = resident.workPose;
+      if (pose && range < 32) {
+        const forward = pose === 'sort' ? 0.69 : pose === 'check' ? 0.42 : 0.36;
+        const lift = pose === 'sweep' ? 0.08 : pose === 'sort' ? 0.86 : 1.36;
+        for (const kind of workSounds(resident.id, pose, workTime, resident.workTime)) {
+          this.events.emit('workSound', { kind, x: resident.x + Math.sin(resident.yaw) * forward,
+            y: resident.y + lift, z: resident.z + Math.cos(resident.yaw) * forward });
+        }
+      }
     }
-  }
-
-  greetSound(resident: Resident): void {
-    this.events.emit('lifeSound', { kind: 'greet', x: resident.x, y: resident.y + (resident.tractor ? 2 : 1.5), z: resident.z });
   }
 }
