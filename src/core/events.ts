@@ -2,6 +2,7 @@
 // subscribe without importing each other.
 
 import type { DogCommand } from '../dog/commands';
+import type { WorkSound } from '../life/residentWork';
 
 export interface Vec3Like {
   x: number;
@@ -10,7 +11,7 @@ export interface Vec3Like {
 }
 
 export type BarkKind = 'alert' | 'warning' | 'attack' | 'happy' | 'found';
-export type LifeSound = 'swallow' | 'hoopoe' | 'fox' | 'wings' | 'rustle' | 'greet' | 'step';
+export type LifeSound = 'swallow' | 'hoopoe' | 'fox' | 'wings' | 'rustle' | 'step';
 
 export interface GameEvents {
   /** Crook swung: pushes animals away inside a cone. */
@@ -120,6 +121,7 @@ export interface GameEvents {
   encounter: { name: string; text: string };
   errandChanged: { title: string };
   lifeSound: Vec3Like & { kind: LifeSound };
+  workSound: Vec3Like & { kind: WorkSound };
   /** Simulation was reset (replay, debug). */
   simReset: { tick: number };
 }

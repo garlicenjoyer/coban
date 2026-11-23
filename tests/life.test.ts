@@ -4,6 +4,8 @@ import { config, SIM_DT } from '../src/core/config';
 import { EventBus } from '../src/core/events';
 import { emptyFrame } from '../src/core/input';
 import { snapshot } from '../src/core/save';
+import { voiceCues } from '../src/audio/residentVoiceCues';
+import { errandDirection } from '../src/life/dialogue';
 import { Errands } from '../src/life/errands';
 import { Resident, Residents } from '../src/life/residents';
 import { Wildlife } from '../src/life/wildlife';
@@ -74,6 +76,57 @@ describe('valley life', () => {
     tractor.conversation = false;
     for (let i = 0; i < 560; i++) residents.step(SIM_DT, quiet);
     expect(tractor.speed).toBeGreaterThan(1);
+  });
+
+  it('sounds the daily work beats nearby and suspends them during a conversation', () => {
+    const activities = [
+      ['ayse', 8, ['oliveRustle', 'oliveDrop']], ['hasan', 11, ['broom', 'broom']],
+      ['emre', 8, ['tractorCheck']], ['zeynep', 8, ['churn']], ['ayse', 13, ['teaSip']],
+    ] as const;
+    for (const [id, hour, expected] of activities) {
+      const events = new EventBus();
+      const residents = new Residents(routes.filter((route) => route.resident === id), terrain, obstacles, events);
+      residents.setTime(hour);
+      const resident = residents.list[0];
+      const ctx = { ...quiet, hour, rider: true, player: { x: resident.x + 4, y: resident.y, z: resident.z } };
+      const heard: string[] = [];
+      events.on('workSound', (event) => {
+        expect(Math.hypot(event.x - resident.x, event.z - resident.z)).toBeLessThan(1);
+        heard.push(event.kind);
+      });
+      const step = (context = ctx) => {
+        for (let i = 0; i < 3.5 / SIM_DT; i++) residents.step(SIM_DT, context);
+      };
+      resident.conversation = true;
+      step();
+      expect(heard).toEqual([]);
+      expect(resident.workTime).toBe(0);
+      resident.conversation = false;
+      step();
+      expect(heard).toEqual(expected);
+      step({ ...ctx, player: distant });
+      expect(heard).toEqual(expected);
+    }
+  });
+
+  it('has voice cues for every daily stop and optional errand response', () => {
+    for (const route of routes) {
+      const resident = new Resident(route, terrain, obstacles);
+      const cues = voiceCues[resident.id];
+      for (const stop of route.stops) {
+        resident.setTime(stop.hour);
+        for (const settled of [true, false]) {
+          resident.settled = settled;
+          expect(cues[resident.routine()]?.[1]).toBeGreaterThan(0);
+          expect(cues[resident.greeting({ hour: 8, flockExposed: false, gateOpen: false })]?.[1]).toBeGreaterThan(0);
+        }
+      }
+      const errand = VALLEY_MAP.errands!.find(({ resident: id }) => id === resident.id)!;
+      expect(cues[errand.offer]?.[1]).toBeGreaterThan(0);
+      expect(cues[errand.completedReply ?? errand.thanks]?.[1]).toBeGreaterThan(0);
+      expect(cues[errandDirection(errand.stops[0].place, true)]?.[1]).toBeGreaterThan(0);
+      for (const { place } of errand.stops) expect(cues[errandDirection(place)]?.[1]).toBeGreaterThan(0);
+    }
   });
 
   it('rewards a quiet approach and takes off when the shepherd sprints at a bird', () => {

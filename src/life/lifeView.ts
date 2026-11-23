@@ -54,7 +54,6 @@ class ResidentPose {
   private tools?: Record<'broom' | 'tea', THREE.Object3D>;
   private footwork?: ShepherdFootwork;
   private working = 0;
-  private workClock = 0;
   private pose: GesturePose = {};
 
   constructor(resident: Resident, models: THREE.Group, private groundAt: (x: number, z: number) => number) {
@@ -103,9 +102,7 @@ class ResidentPose {
     this.eyes.forEach((eye) => { eye.scale.y = face.eyes; });
     this.mouth.scale.y = face.mouth;
     const pose = r.settled ? r.destination.pose : undefined;
-    const active = !!pose && !r.conversation && !r.gesturing && r.wave === 0;
-    this.working = lerp(this.working, active ? 1 : 0, 1 - Math.exp(-dt * 7));
-    if (active) this.workClock += dt;
+    this.working = lerp(this.working, r.workPose ? 1 : 0, 1 - Math.exp(-dt * 7));
     if (r.tractor) {
       const strain = Math.min(1, r.speed / 4);
       const steering = clamp(angleDelta(r.previousYaw, r.yaw) * 18, -0.38, 0.38) * strain;
@@ -140,7 +137,7 @@ class ResidentPose {
       }
     }
 
-    const work = pose ? residentWork(r.id, pose, this.workClock) : {};
+    const work = pose ? residentWork(r.id, pose, r.workTime) : {};
     const gesture = r.gesturing ? residentGesture(r.id, r.gesture, r.lineAge)
       : r.wave > 0 ? residentGesture(r.id, 'greet', 1.5 - r.wave) : {};
     const k = 1 - Math.exp(-dt * 15);

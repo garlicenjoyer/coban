@@ -15,6 +15,7 @@ export interface Errand {
   title: string;
   offer: string;
   thanks: string;
+  completedReply?: string;
   reward: number;
   stops: readonly ErrandStop[];
 }

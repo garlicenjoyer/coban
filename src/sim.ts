@@ -38,7 +38,8 @@ import { DAY4, FREE_DAY } from './tasks/day4';
 import { Residents, type Resident } from './life/residents';
 import { Wildlife, wildlifeNames } from './life/wildlife';
 import { Errands, type ErrandTarget } from './life/errands';
-import type { DialogueChoice, DialogueOption, ResidentDialogue, ResidentGesture } from './life/dialogue';
+import { errandDirection, type DialogueChoice, type DialogueOption, type ResidentDialogue, type ResidentGesture } from './life/dialogue';
+import { voiceCues } from './audio/residentVoiceCues';
 
 /** Interact presses within this distance of the gate toggle it. */
 export const GATE_REACH = 2.5;
@@ -1013,7 +1014,6 @@ export class Sim {
     if (near?.resident) {
       const resident = near.resident;
       this.say(resident, resident.greeting(this.residentContext()), 'greet');
-      this.residents.greetSound(resident);
     } else if (near?.animal) {
       const animal = near.animal;
       this.observed = { animal, until: this.tick + 6 / SIM_DT };
@@ -1041,7 +1041,8 @@ export class Sim {
       { id: 'leave', label: offer ? 'Maybe later' : 'See you later' },
     );
     resident.conversation = true;
-    resident.perform(gesture, Math.min(8, Math.max(2.2, text.length / 19)));
+    const seconds = voiceCues[resident.id][text]?.[1] ?? Math.min(8, Math.max(2.2, text.length / 19));
+    resident.perform(gesture, seconds);
     this.dialogue = { resident, text, offer, options };
   }
 
@@ -1066,7 +1067,7 @@ export class Sim {
     } else if (choice === 'accept') {
       const errand = this.errands.accept(resident.id);
       if (!errand) return;
-      this.say(resident, `Sağ ol. Start at ${errand.stops[0].place}. I’ve marked the map.`, 'thank');
+      this.say(resident, errandDirection(errand.stops[0].place, true), 'thank');
       this.events.emit('errandChanged', { title: errand.title });
     } else {
       const errand = this.errands.forResident(resident.id);
@@ -1075,7 +1076,7 @@ export class Sim {
       if (status === undefined) this.say(resident, errand.offer, 'offer', errand);
       else {
         const stop = errand.stops[status];
-        this.say(resident, stop ? `Your next stop is ${stop.place}. I’ve marked it on the map.` : errand.thanks,
+        this.say(resident, stop ? errandDirection(stop.place) : errand.completedReply ?? errand.thanks,
           stop ? 'explain' : 'thank');
       }
     }
