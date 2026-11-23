@@ -1102,7 +1102,8 @@ export class Sim {
   useItem(slot: number): void {
     const sc = config.satchel;
     const it = this.satchel.slots[slot];
-    const say = (ok: boolean, text: string) => this.events.emit('itemUsed', { item: it?.id ?? 'none', ok, text });
+    const say = (ok: boolean, text: string, target?: { x: number; z: number }) =>
+      this.events.emit('itemUsed', { item: it?.id ?? 'none', ok, text, target });
     if (!it) return say(false, 'That pocket of the satchel is empty.');
     if (it.uses <= 0) return say(false, `No ${ITEMS[it.id].name.toLowerCase()} left today. More at home.`);
     const p = this.player.pos;
@@ -1116,7 +1117,7 @@ export class Sim {
           dog.wound = 0;
           dog.bond = Math.min(100, dog.bond + 2);
           spend();
-          return say(true, 'You salve Karabaş’s bite. He licks your hand.');
+          return say(true, 'You salve Karabaş’s bite. He licks your hand.', dog);
         }
         let best: Sheep | null = null;
         for (const s of this.flock.sheep) {
@@ -1126,7 +1127,7 @@ export class Sim {
         if (!best) return say(false, 'Nobody within reach needs the salve.');
         best.condition = Math.min(100, best.condition + sc.salveHeal);
         spend();
-        return say(true, 'You salve a ewe’s scrapes and bites.');
+        return say(true, 'You salve a ewe’s scrapes and bites.', best);
       }
       case 'rope': {
         if (this.ledSheep) {
@@ -1166,7 +1167,7 @@ export class Sim {
         dog.bond = Math.min(100, dog.bond + config.dogCare.handBond);
         spend();
         this.events.emit('dogFed', { how: 'hand', satiety: dog.care.satiety });
-        return say(true, 'Karabaş takes the bread from your hand, gently, and licks the yoghurt off your fingers.');
+        return say(true, 'Karabaş takes the bread from your hand, gently, and licks the yoghurt off your fingers.', dog);
       }
     }
   }

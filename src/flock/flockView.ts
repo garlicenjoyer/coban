@@ -79,6 +79,7 @@ export class FlockView {
   readonly root = new THREE.Group();
   private body!: THREE.InstancedMesh;
   private neck!: THREE.InstancedMesh;
+  readonly halterPoint = new THREE.Vector3();
   private head!: THREE.InstancedMesh;
   private jaw!: THREE.InstancedMesh;
   private limbMeshes!: THREE.InstancedMesh[];
@@ -185,6 +186,7 @@ export class FlockView {
       this.body.setMatrixAt(i, body);
       this.body.setColorAt(i, s.shorn ? c.setHex(look.fleece).lerp(SHORN, 0.75) : c.setHex(look.fleece));
       this.neck.setMatrixAt(i, pose.neck.matrixWorld);
+      if (s.led) this.halterPoint.set(0, 0.036, -0.198).applyMatrix4(pose.neck.matrixWorld);
       this.neck.setColorAt(i, c.setHex(look.fleece));
       this.tails.setMatrixAt(i, pose.tail.matrixWorld);
       this.tails.setColorAt(i, c);

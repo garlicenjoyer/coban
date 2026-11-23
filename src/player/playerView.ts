@@ -5,6 +5,7 @@ import type { Vec3Like } from '../core/events';
 import { commandInfo } from '../dog/commands';
 import type { Sim } from '../sim';
 import { LanternView } from './lanternView';
+import { modelPart } from '../render/gameModel';
 import { MotorcycleRider } from './motorcycleRider';
 import { MotorcycleIncident } from './motorcycleIncident';
 import { StationWork, type WorkStations } from './stationWork';
@@ -36,7 +37,9 @@ export class PlayerView {
   private readonly work: StationWork;
   private readonly incident: MotorcycleIncident;
   private readonly previousVisualPosition = new THREE.Vector3();
-  private readonly hand = new THREE.Vector3();
+  readonly leftHand = new THREE.Vector3();
+  private readonly salve: THREE.Object3D;
+  private readonly bread: THREE.Object3D;
   private readonly lantern: LanternView;
   private readonly fx: Fx[] = [];
   private action?: Action;
@@ -50,11 +53,16 @@ export class PlayerView {
     private readonly rig: ShepherdRig,
     private readonly bikeView: BikeView,
     stations: WorkStations,
+    fieldProps: THREE.Group,
     private readonly playKick: (success: boolean) => void = () => {},
   ) {
     this.root.add(rig.model);
     scene.add(this.root);
-    this.lantern = new LanternView(scene);
+    this.lantern = new LanternView(scene, fieldProps);
+    this.salve = modelPart(fieldProps, 'Wound salve').clone();
+    this.bread = modelPart(fieldProps, 'Bread and yoghurt').clone();
+    this.salve.visible = this.bread.visible = false;
+    scene.add(this.salve, this.bread);
     this.rider = new MotorcycleRider(bikeView, this.groundAt);
     this.incident = new MotorcycleIncident(bikeView, this.groundAt);
     this.work = new StationWork(sim, stations, scene);
@@ -84,6 +92,9 @@ export class PlayerView {
       }
     });
     events.on('dogPetted', () => this.play('pet', 1.0, sim.dog));
+    events.on('itemUsed', ({ item, ok, target }) => {
+      if (ok && (item === 'salve' || item === 'bread')) this.play(item, 1.85, target);
+    });
     events.on('gateInteract', () => this.play('gate', 0.65, sim.gatePos));
     events.on('bikeKick', ({ success }) => {
       // A retry can arrive before the previous return stroke finishes.
@@ -161,7 +172,7 @@ export class PlayerView {
     const progress = action ? Math.min(1, action.age / action.duration) : 0;
     const sheep = this.sim.flock.sheep.find((s) => s.freeProgress > 0);
     const interaction = sheep ? 'free' : undefined;
-    const target = action?.target ?? sheep;
+    const target = this.sim.brewing > 0 ? undefined : action?.target ?? sheep;
     let lookOffset = 0;
     if (!riding && target) {
       const dx = this.renderPos.x - target.x;
@@ -198,12 +209,23 @@ export class PlayerView {
     if (rider || incident || work) this.renderPos.copy(this.root.position);
     if (riding && rider) this.renderPos.lerp(this.bikeView.renderPos, smoothstep(rider.seat, 0.72, 1));
     const speedOnFoot = stepping ? Math.min(1.6, transitionSpeed) : riding || incident || work ? 0 : Math.min(speed, p.speed);
-    const lantern = this.sim.lanternOn && !riding && !rider && !incident && !work;
+    const handsFree = !riding && !rider && !incident && !work;
+    const prop = action?.kind === 'salve' ? this.salve : action?.kind === 'bread' ? this.bread : undefined;
+    const item = handsFree && progress > 0.10 && progress < 0.91 ? prop : undefined;
+    const lantern = this.sim.lanternOn && handsFree && !item;
     this.rig.update(dt, stepping ? 'walk' : p.gait, speedOnFoot, p.grounded || stepping,
       action && { kind: action.kind, progress }, interaction, bike, rider, incident, lantern, this.groundAt, work);
-    if (lantern || work) this.rig.leftHandPosition(this.hand);
-    if (work) this.work.afterPose(this.hand, this.root.quaternion);
-    this.lantern.update(lantern, this.hand, yaw + this.lookOffset);
+    if (lantern || work || item || this.sim.ledSheep) this.rig.leftHandPosition(this.leftHand);
+    this.salve.visible = item === this.salve;
+    this.bread.visible = item === this.bread;
+    if (item) {
+      item.position.copy(this.leftHand);
+      item.rotation.set(0, yaw + this.lookOffset + Math.PI, 0);
+      item.translateZ(0.041);
+      item.position.y -= item === this.salve ? 0.043 : 0.014;
+    }
+    if (work) this.work.afterPose(this.leftHand, this.root.quaternion);
+    this.lantern.update(lantern, this.leftHand, yaw + this.lookOffset);
     if (action) {
       action.age += dt;
       if (progress >= 1) this.action = undefined;

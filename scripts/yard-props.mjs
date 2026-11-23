@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { group, Parts } from './model-parts.mjs';
+import { teaTray } from './field-props.mjs';
 
 const wood = 0x875e3e;
 const endgrain = 0x513b30;
@@ -99,10 +100,11 @@ function porchTable() {
   const p = new Parts();
   table(p, 0.346);
   // Leave the center of the table clear for Uncle Ahmet's letter.
-  for (const [x, z] of [[0.19, -0.137], [0.235, 0.088]]) {
-    dish(p, [x, 0.802, z]);
-    if (x !== 0.19) teaGlass(p, [x, 0.802, z]);
-    spoon(p, [x - 0.048, 0.828, z + 0.031]);
+  teaTray(p, [0.188, 0.801, -0.02], 0.206, 0.65);
+  for (const [x, z] of [[0.19, -0.137], [0.208, 0.082]]) {
+    dish(p, [x, 0.812, z]);
+    if (z > 0) teaGlass(p, [x, 0.812, z]);
+    spoon(p, [x - 0.048, 0.838, z + 0.031]);
   }
   return p;
 }
@@ -285,7 +287,50 @@ function teaProps(root) {
   const kettleParts = new Parts();
   kettle(kettleParts, [0, 0, 0], 0.90, 0, 0xc2764e);
   kettleParts.mesh(pot, 'Çaydanlık');
-  const cup = group(root, 'Tea cup', [0.19, 0.814, -0.137]);
+  const cup = group(root, 'Tea cup', [0.19, 0.824, -0.137]);
+  const glass = new Parts();
+  teaGlass(glass, [0, -0.012, 0]);
+  glass.mesh(cup, 'Tulip glass');
+}
+
+function fieldTeaKit(table) {
+  const kit = group(table, 'Field tea kit', [0, 0, 1.3]);
+  const tray = new Parts();
+  teaTray(tray, [0, 0.287, -0.46], 0.299, 1.13);
+  const timber = (x, y, z) => new T.Color(0x654735).lerp(new T.Color(0xac7850),
+    0.43 + 0.25 * Math.sin(x * 11 + z * 84) + 0.15 * Math.cos(y * 102 - x * 48));
+  for (const z of [-0.613, -0.302]) {
+    tray.rod([-0.239, 0.004, z], [0.226, 0.277, z], 0.018, 0.021, timber, 8)
+      .rod([0.238, 0.004, z], [-0.226, 0.277, z], 0.018, 0.021, timber, 8)
+      .rod([0, 0.143, z - 0.024], [0, 0.143, z + 0.024], 0.011, 0.012, iron, 8);
+    tray.box([0, 0.270, z], [0.52, 0.033, 0.046], timber);
+  }
+  for (const x of [-0.237, 0.237]) {
+    tray.rod([x, 0.019, -0.621], [x, 0.019, -0.293], 0.020, 0.020, timber, 8);
+    tray.torus([x * 1.31, 0.307, -0.46], 0.034, 0.004, brass, [Math.PI / 2, 0, 0],
+      [1, 1.31, 1], Math.PI * 2, 18);
+  }
+  dish(tray, [-0.171, 0.298, -0.45]);
+  spoon(tray, [-0.217, 0.321, -0.425]);
+  const pouch = (x, y, z) => new T.Color(0x805840).lerp(new T.Color(0xbd8a5f),
+    0.48 + 0.27 * Math.sin(x * 71 + y * 25 + z * 83));
+  tray.oval([-0.104, 0.325, -0.262], [0.074, 0.028, 0.052], pouch, [0, -0.25, 0.1], 16)
+    .oval([-0.139, 0.357, -0.267], [0.025, 0.028, 0.021], pouch, [0, 0.26, 0.35], 11)
+    .torus([-0.141, 0.348, -0.268], 0.019, 0.0025, 0xdac291, [Math.PI / 2, 0, 0.35], undefined, Math.PI * 2, 16);
+  const sugar = [0.079, 0.298, -0.267];
+  lathe(tray, sugar, [[0, 0], [0.031, 0], [0.039, 0.007], [0.040, 0.050],
+    [0.036, 0.055], [0.040, 0.059], [0.039, 0.065], [0, 0.069]], blue);
+  ring(tray, [sugar[0], 0.355, sugar[2]], 0.039, 0.0025, tin);
+  tray.mesh(kit, 'Hammered tray and folding stand');
+
+  const pot = group(kit, 'Field kettle', [0.132, 0.298, -0.48]);
+  pot.rotation.y = Math.PI;
+  const kettleParts = new Parts();
+  kettle(kettleParts, [0, 0, 0], 0.90, 0, 0x697d77);
+  kettleParts.mesh(pot, 'Travel çaydanlık');
+  pot.scale.setScalar(0.82);
+
+  const cup = group(kit, 'Field glass', [-0.171, 0.320, -0.45]);
   const glass = new Parts();
   teaGlass(glass, [0, -0.012, 0]);
   glass.mesh(cup, 'Tulip glass');
@@ -315,7 +360,10 @@ export function yardProps() {
     const origin = [(i % 5) * 2.7, 0, Math.floor(i / 5) * 2.6];
     const prop = group(root, name, origin);
     parts.mesh(prop, name + ' mesh');
-    if (name === 'Porch tea table') teaProps(prop);
+    if (name === 'Porch tea table') {
+      teaProps(prop);
+      fieldTeaKit(prop);
+    }
     if (name === 'Cheese press and shelf') pressSpindle(prop);
   }
   return root;

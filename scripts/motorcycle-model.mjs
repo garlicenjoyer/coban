@@ -59,6 +59,79 @@ function mudguard(parts, center, radius, width, start, end) {
   }
 }
 
+function cargoRack(root) {
+  const rack = new Parts();
+  const metal = (x, y, z) => Math.sin(x * 207 + z * 86) * Math.cos(z * 97 - y * 119) > 0.73
+    ? 0x898578 : 0x555952;
+  for (const side of [-1, 1]) {
+    const x = side * 0.223;
+    rack.sweep([[side * 0.117, 0.733, 0.33, 0.012, 0.012], [side * 0.196, 0.743, 0.47, 0.012, 0.012],
+      [x, 0.748, 0.55, 0.012, 0.012], [x, 0.748, 0.842, 0.012, 0.012],
+      [side * 0.19, 0.751, 0.887, 0.012, 0.012]], metal, 9)
+      .rod([side * 0.127, 0.397, 0.57], [side * 0.198, 0.741, 0.807], 0.011, 0.012, iron)
+      .rod([side * 0.126, 0.531, 0.36], [side * 0.205, 0.744, 0.58], 0.011, 0.011, iron)
+      .rod([x, 0.756, 0.52], [x, 0.778, 0.52], 0.014, 0.013, steel, 8)
+      .rod([x, 0.754, 0.82], [x, 0.775, 0.82], 0.014, 0.013, steel, 8);
+  }
+  for (const z of [0.526, 0.607, 0.697, 0.786, 0.886]) {
+    const x = z === 0.886 ? 0.191 : 0.216;
+    rack.rod([-x, 0.745, z], [x, 0.745, z], 0.010, 0.010, metal, 8);
+  }
+  for (const x of [-0.161, 0, 0.161]) {
+    rack.box([x, 0.755, 0.699], [0.024, 0.011, 0.369], 0x4b463d);
+  }
+  rack.mesh(root, 'Tubular luggage rack');
+
+  for (const [index, side] of [-1, 1].entries()) {
+    const can = group(root, `Water can ${index + 1}`, [side * 0.104, 0.757, 0.691]);
+    const p = new Parts();
+    const outline = new T.Shape([
+      [-0.134, 0.022], [-0.121, 0.009], [0.122, 0.009], [0.139, 0.024], [0.135, 0.215],
+      [0.103, 0.253], [0.051, 0.253], [0.027, 0.232], [-0.102, 0.232], [-0.137, 0.190],
+    ].map(([z, y]) => new T.Vector2(z, y)));
+    const shell = new T.ExtrudeGeometry(outline, { depth: 0.148, bevelSize: 0.009,
+      bevelThickness: 0.008, bevelSegments: 2, steps: 1 });
+    const colors = index === 0 ? [0x476b70, 0x83a19b, 0x46666a, 0x9cae9f]
+      : [0x6b755a, 0xa2a687, 0x676d55, 0xb7b295];
+    const enamel = (x, y, z) => {
+      const wear = Math.sin(z * 161 + y * 181) * Math.cos(y * 98 + z * 63);
+      return new T.Color(colors[0]).lerp(new T.Color(colors[1]),
+        T.MathUtils.clamp(0.40 + 1.4 * y + 0.19 * wear, 0, 1));
+    };
+    p.add(shell, enamel, [-0.074, 0.001, 0], undefined, [0, Math.PI / 2, 0]);
+    // Pressed ribs reinforce both broad faces.
+    for (const s of [-1, 1]) {
+      for (const z of [-0.084, 0.084]) {
+        p.sweep([[s * 0.080, 0.062, z * 1.10, 0.004, 0.004], [s * 0.084, 0.105, z * 0.52, 0.006, 0.004],
+          [s * 0.084, 0.154, z * 0.53, 0.006, 0.004], [s * 0.080, 0.196, z, 0.003, 0.003]], colors[2], 7);
+      }
+      p.rod([s * 0.082, 0.038, -0.109], [s * 0.082, 0.038, 0.102], 0.0018, 0.0018, colors[3], 6);
+      p.rod([s * 0.080, 0.205, -0.092], [s * 0.080, 0.205, -0.061], 0.003, 0.002, colors[3], 6);
+    }
+    p.sweep([[0, 0.230, -0.028, 0.012, 0.012], [0, 0.268, -0.050, 0.011, 0.011],
+      [0, 0.276, 0.007, 0.011, 0.010], [0, 0.260, 0.066, 0.011, 0.010],
+      [0, 0.234, 0.073, 0.011, 0.010]], enamel, 10);
+    p.rod([0, 0.249, -0.083], [0, 0.275, -0.086], 0.022, 0.022, colors[2], 13)
+      .rod([0, 0.270, -0.085], [0, 0.288, -0.088], 0.025, 0.024, 0x564942, 13)
+      .box([0, 0.288, -0.09], [0.033, 0.007, 0.011], 0x88705d);
+    const beltZ = 0.080;
+    const strap = 0x5b4134;
+    p.box([0, 0.239, beltZ], [0.167, 0.008, 0.030], strap);
+    for (const s of [-1, 1]) {
+      p.box([s * 0.085, 0.119, beltZ], [0.006, 0.241, 0.031], strap)
+        .rod([s * 0.089, 0.019, beltZ - 0.011], [s * 0.089, 0.229, beltZ - 0.011],
+          0.0013, 0.0011, 0x977458, 5);
+    }
+    for (const z of [beltZ - 0.022, beltZ + 0.022]) {
+      p.rod([side * 0.090, 0.15, z], [side * 0.090, 0.182, z], 0.003, 0.003, brass, 6);
+    }
+    for (const y of [0.150, 0.166, 0.182]) {
+      p.rod([side * 0.090, y, beltZ - 0.022], [side * 0.090, y, beltZ + 0.022], 0.003, 0.003, brass, 6);
+    }
+    p.mesh(can, 'Pressed enamel and leather strap');
+  }
+}
+
 export function motorcycleModel({ wheelRadius: r, cgFromRear: rz, wheelbase }) {
   const fz = rz - wheelbase;
   const root = group(null, '175 cc field motorcycle');
@@ -114,7 +187,7 @@ export function motorcycleModel({ wheelRadius: r, cgFromRear: rz, wheelbase }) {
   body.rod([0.188, 0.391, 0.881], [0.188, 0.394, 0.897], 0.027, 0.023, rubber, 14);
   body.rod([-0.162, 0.41, 0.053], [-0.196, 0.487, -0.086], 0.009, 0.009, steel);
 
-  // Painted fuel tank, knee pads, coachlines, leather saddle, and rear rack.
+  // Painted fuel tank, knee pads, coachlines, and leather saddle.
   body.sweep([[0, 0.818, -0.487, 0.014, 0.014], [0, 0.851, -0.411, 0.111, 0.104],
     [0, 0.846, -0.266, 0.134, 0.163], [0, 0.826, -0.101, 0.121, 0.157],
     [0, 0.788, 0.045, 0.067, 0.107], [0, 0.783, 0.109, 0.018, 0.021]], green, 24, 5, [0, 1, 0]);
@@ -138,6 +211,7 @@ export function motorcycleModel({ wheelRadius: r, cgFromRear: rz, wheelbase }) {
   body.oval([0, 0.608, rz + 0.30], [0.054, 0.042, 0.044], 0x7c352e, [0.36, 0, 0], 12);
   body.box([0, 0.525, rz + 0.335], [0.124, 0.062, 0.011], 0xb6ae95, [-0.27, 0, 0]);
   body.mesh(root, 'Frame and engine');
+  cargoRack(root);
 
   const fork = group(root, 'Fork', [0, 0.86, fz + 0.2]);
   fork.rotation.order = 'XYZ';

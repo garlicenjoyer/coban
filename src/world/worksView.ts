@@ -6,6 +6,8 @@
 
 import * as THREE from 'three';
 import { toonMaterial } from '../render/toon';
+import { modelMesh, modelPart } from '../render/gameModel';
+import { HalterRope } from './halterRope';
 import type { Sim } from '../sim';
 import { hutRuinWalls } from './homestead';
 import { layout } from './map';
@@ -16,11 +18,9 @@ const darkStone = toonMaterial({ color: 0xa8977c });
 const roofMat = toonMaterial({ color: 0xb8653f });
 const woodMat = toonMaterial({ color: 0x7a5636 });
 const stakeMat = toonMaterial({ color: 0xd9b27a });
-const saltMat = toonMaterial({ color: 0xf2ece0 });
 const boneMat = toonMaterial({ color: 0xece3cf });
 const scatMat = toonMaterial({ color: 0x5a4a3a });
 const woolMat = toonMaterial({ color: 0xf5efe2 });
-const ropeMat = new THREE.LineBasicMaterial({ color: 0x8a6a40 });
 const stringMat = new THREE.LineBasicMaterial({ color: 0xf4efe4, transparent: true, opacity: 0.8 });
 
 export class WorksView {
@@ -28,26 +28,25 @@ export class WorksView {
   private sites = new Map<WorkKind, { stakes: THREE.Group; built: THREE.Group | null; rising: THREE.Group | null }>();
   private cairnGroup = new THREE.Group();
   private cairnCount = -1;
-  private salt: THREE.Mesh;
-  private stones: THREE.InstancedMesh;
-  private rope: THREE.Line;
+  private readonly salt: THREE.Object3D;
+  private readonly stones: THREE.InstancedMesh;
+  private readonly rope: HalterRope;
+  private readonly stonePose = new THREE.Object3D();
   private simRef: Sim | null = null;
 
-  constructor(private sim: () => Sim) {
+  constructor(private sim: () => Sim, fieldProps: THREE.Group) {
     this.root.name = 'Works';
     this.root.add(this.cairnGroup);
-    this.salt = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.22, 0.25), saltMat);
-    this.salt.castShadow = true;
+    this.salt = modelPart(fieldProps, 'Salt lick').clone();
     this.salt.visible = false;
     this.root.add(this.salt);
-    this.stones = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.06, 0), darkStone, 8);
+    const stone = modelMesh(fieldProps, 'Sling stone mesh');
+    this.stones = new THREE.InstancedMesh(stone.geometry, stone.material, 8);
     this.stones.count = 0;
     this.stones.frustumCulled = false;
     this.root.add(this.stones);
-    this.rope = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), ropeMat);
-    this.rope.frustumCulled = false;
-    this.rope.visible = false;
-    this.root.add(this.rope);
+    this.rope = new HalterRope(fieldProps);
+    this.root.add(this.rope.mesh);
   }
 
   private ground(x: number, z: number): number {
@@ -334,7 +333,7 @@ export class WorksView {
     return g;
   }
 
-  update(playerPos: { x: number; y: number; z: number }): void {
+  update(hand: THREE.Vector3, halter: THREE.Vector3): void {
     const sim = this.sim();
     if (sim !== this.simRef || this.sites.size !== sim.works.sites.length) this.rebuild();
 
@@ -375,25 +374,20 @@ export class WorksView {
 
     const s = sim.saltLick;
     this.salt.visible = !!s;
-    if (s) this.salt.position.set(s.x, this.ground(s.x, s.z) + 0.1, s.z);
+    if (s) this.salt.position.set(s.x, this.ground(s.x, s.z), s.z);
 
-    const d = new THREE.Object3D();
+    const d = this.stonePose;
     this.stones.count = Math.min(8, sim.stones.length);
     for (let i = 0; i < this.stones.count; i++) {
       const st = sim.stones[i];
       d.position.set(st.x, st.y, st.z);
+      d.rotation.set(st.t * 17, st.t * 12 + i, st.t * 8);
       d.updateMatrix();
       this.stones.setMatrixAt(i, d.matrix);
     }
     this.stones.instanceMatrix.needsUpdate = true;
 
-    const led = sim.ledSheep;
-    this.rope.visible = !!led;
-    if (led) {
-      const a = this.rope.geometry.attributes.position as THREE.BufferAttribute;
-      a.setXYZ(0, playerPos.x, playerPos.y + 0.9, playerPos.z);
-      a.setXYZ(1, led.x, led.y + 0.55, led.z);
-      a.needsUpdate = true;
-    }
+    this.rope.mesh.visible = !!sim.ledSheep;
+    if (sim.ledSheep) this.rope.update(hand, halter);
   }
 }

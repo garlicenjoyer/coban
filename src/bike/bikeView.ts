@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { config } from '../core/config';
 import { modelMesh, modelPart } from '../render/gameModel';
-import { toonMaterial } from '../render/toon';
 import { RACK_CANS } from '../world/water';
 import type { Bike } from './bike';
 import { kickStroke } from './kickMotion';
@@ -16,7 +15,7 @@ export class BikeView {
   private readonly starter: THREE.Object3D;
   private readonly lampMat: THREE.MeshToonMaterial;
   private readonly lampLight: THREE.SpotLight;
-  private readonly cans: THREE.Group[] = [];
+  private readonly cans: THREE.Object3D[];
   readonly seat: THREE.Object3D;
   readonly grips: readonly [THREE.Object3D, THREE.Object3D];
   readonly pegs: readonly [THREE.Object3D, THREE.Object3D];
@@ -57,26 +56,8 @@ export class BikeView {
     this.lampLight.target.position.set(0, -5.65, -12);
     this.fork.add(this.lampLight, this.lampLight.target);
 
-    const canBody = new THREE.BoxGeometry(0.17, 0.29, 0.29);
-    const canHandle = new THREE.TorusGeometry(0.055, 0.012, 6, 14);
-    const canMaterial = toonMaterial({ color: 0x638793 });
-    const strap = toonMaterial({ color: 0x3c332a });
-    const rack = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.025, 0.35), strap);
-    rack.position.set(0, 0.72, 0.64);
-    this.root.add(rack);
-    for (let i = 0; i < RACK_CANS; i++) {
-      const can = new THREE.Group();
-      can.position.set(i === 0 ? -0.095 : 0.095, 0.875, 0.64);
-      const body = new THREE.Mesh(canBody, canMaterial);
-      const handle = new THREE.Mesh(canHandle, canMaterial);
-      handle.rotation.y = Math.PI / 2;
-      handle.position.y = 0.145;
-      const band = new THREE.Mesh(new THREE.BoxGeometry(0.176, 0.30, 0.038), strap);
-      can.add(body, handle, band);
-      can.visible = false;
-      this.cans.push(can);
-      this.root.add(can);
-    }
+    this.cans = Array.from({ length: RACK_CANS }, (_, i) => modelPart(model, `Water can ${i + 1}`));
+    for (const can of this.cans) can.visible = false;
   }
 
   setKick(phase: number): void {

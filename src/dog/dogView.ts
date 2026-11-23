@@ -1,5 +1,3 @@
-import { toonMaterial } from '../render/toon';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import * as THREE from 'three';
 import { modelPart } from '../render/gameModel';
 import { QuadrupedGait } from '../render/quadrupedGait';
@@ -67,8 +65,8 @@ export class DogView {
   private labelText = '';
   readonly renderPos = new THREE.Vector3();
   /** Collars bought in the village: a plain tick collar, or the iron-spiked tasma. */
-  private readonly collar = new THREE.Group();
-  private readonly spikes: THREE.Mesh;
+  private readonly tickCollar: THREE.Object3D;
+  private readonly tasma: THREE.Object3D;
 
   constructor(
     private scene: THREE.Scene,
@@ -86,16 +84,9 @@ export class DogView {
     this.tail = modelPart(model, 'Tail');
     this.gait = new QuadrupedGait(this.root, this.body, groundAt);
     scene.add(this.root);
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.025, 6, 18), toonMaterial({ color: 0x6b3a20 }));
-    const spikeGeo: THREE.BufferGeometry[] = [];
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2;
-      spikeGeo.push(new THREE.ConeGeometry(0.018, 0.08, 4).rotateZ(-Math.PI / 2 + a).translate(Math.cos(a) * 0.19, Math.sin(a) * 0.19, 0));
-    }
-    this.spikes = new THREE.Mesh(mergeGeometries(spikeGeo)!, toonMaterial({ color: 0x9aa0a6 }));
-    this.collar.add(band, this.spikes);
-    this.collar.visible = false;
-    (this.headPivot.parent ?? this.root).add(this.collar);
+    this.tickCollar = modelPart(this.body, 'Plain tick collar');
+    this.tasma = modelPart(this.body, 'Spiked tasma');
+    this.tickCollar.visible = this.tasma.visible = false;
     events.on('simReset', () => {
       this.rest = 0;
       this.gait.reset();
@@ -167,10 +158,8 @@ export class DogView {
       lower.rotation.x += 0.6;
     }
     this.headPivot.rotation.z = d.scratching > 0 ? 0.25 : 0;
-    // The collar sits on his neck, just behind the head.
-    this.collar.visible = d.collar !== '';
-    this.spikes.visible = d.collar === 'spiked';
-    if (this.collar.visible) this.collar.position.set(this.headPivot.position.x, this.headPivot.position.y - 0.05, this.headPivot.position.z + 0.16);
+    this.tickCollar.visible = d.collar === 'tick';
+    this.tasma.visible = d.collar === 'spiked';
 
     // Debug label: layer and state.
     const want = config.debug.showSheepModes ? `${d.active}: ${d.state}` : '';

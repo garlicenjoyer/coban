@@ -53,13 +53,16 @@ export class StationWork {
   private readonly stream: THREE.Mesh;
   private readonly milk: THREE.Mesh;
   private readonly milkJets: THREE.Mesh[];
-  private readonly portable = new THREE.Group();
-  private readonly tray = new THREE.Group();
+  private readonly portable: THREE.Object3D;
+  private readonly tray: THREE.Object3D;
   private readonly spindle: THREE.Object3D;
   private readonly handles: readonly [THREE.Object3D, THREE.Object3D];
   private readonly potRest: THREE.Vector3;
   private readonly cupRest: THREE.Vector3;
   private readonly potYaw: number;
+  private readonly fieldPotRest: THREE.Vector3;
+  private readonly fieldCupRest: THREE.Vector3;
+  private readonly fieldPotTurn: THREE.Quaternion;
   private readonly mark = new THREE.Vector3();
   private readonly local = new THREE.Vector3();
   private readonly tilt = new THREE.Quaternion();
@@ -76,23 +79,13 @@ export class StationWork {
     this.potRest = this.kettle.position.clone();
     this.cupRest = this.cup.position.clone();
     this.potYaw = this.kettle.rotation.y;
-    this.fieldKettle = this.kettle.clone();
-    this.fieldCup = this.cup.clone();
-    this.fieldKettle.scale.setScalar(0.82);
-    const trayWood = toonMaterial({ color: 0x805839 });
-    const top = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.036, 0.34), trayWood);
-    top.position.y = 0.282;
-    top.castShadow = top.receiveShadow = true;
-    this.tray.add(top);
-    const leg = new THREE.BoxGeometry(0.042, 0.27, 0.041);
-    for (const x of [-0.22, 0.22]) for (const z of [-0.119, 0.119]) {
-      const foot = new THREE.Mesh(leg, trayWood);
-      foot.position.set(x, 0.135, z);
-      foot.castShadow = true;
-      this.tray.add(foot);
-    }
-    this.tray.position.z = -0.46;
-    this.portable.add(this.tray, this.fieldKettle, this.fieldCup);
+    this.portable = modelPart(stations.teaTable, 'Field tea kit');
+    this.fieldKettle = modelPart(this.portable, 'Field kettle');
+    this.fieldCup = modelPart(this.portable, 'Field glass');
+    this.fieldPotRest = this.fieldKettle.position.clone();
+    this.fieldCupRest = this.fieldCup.position.clone();
+    this.fieldPotTurn = this.fieldKettle.quaternion.clone();
+    this.tray = modelPart(this.portable, 'Hammered tray and folding stand');
     this.portable.visible = false;
     scene.add(this.portable);
     this.spindle = modelPart(stations.press, 'Press spindle');
@@ -217,11 +210,14 @@ export class StationWork {
       root.updateWorldMatrix(true, false);
       this.portable.position.copy(root.position);
       this.portable.quaternion.copy(root.quaternion);
+      this.portable.translateZ(-0.11);
+      this.portable.position.y = this.sim.terrain.heightAt(this.portable.position.x, this.portable.position.z);
       this.portable.visible = true;
       this.tray.visible = this.fieldKettle.visible = !served;
-      this.fieldKettle.position.set(0.13, 0.301, -0.48);
-      this.fieldKettle.rotation.set(0, Math.PI, 0);
-      this.fieldCup.position.set(-0.18, served ? 1.05 : 0.301, -0.45);
+      this.fieldKettle.position.copy(this.fieldPotRest);
+      this.fieldKettle.quaternion.copy(this.fieldPotTurn);
+      this.fieldCup.position.copy(this.fieldCupRest);
+      if (served) this.fieldCup.position.y = 1.05;
       pose.sit = served ? 0 : 0.38;
       pose.lean = served ? 0 : 0.82;
     }

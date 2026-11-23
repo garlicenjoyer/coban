@@ -1,27 +1,26 @@
 import * as THREE from 'three';
-import { toonMaterial } from '../render/toon';
+import { modelMesh, modelPart } from '../render/gameModel';
 
 export class LanternView {
-  private readonly model = new THREE.Group();
+  private readonly model: THREE.Object3D;
   private readonly light = new THREE.PointLight(0xffbc72, 0, 17, 1.65);
 
-  constructor(scene: THREE.Scene) {
-    const metal = toonMaterial({ color: 0x43382f });
-    const glass = new THREE.MeshBasicMaterial({ color: 0xffc36b });
-    const handle = new THREE.Mesh(new THREE.TorusGeometry(0.065, 0.008, 6, 16), metal);
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.086, 0.036, 10), metal);
-    cap.position.y = -0.08;
-    const chamber = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.073, 0.13, 10), glass);
-    chamber.position.y = -0.16;
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.076, 0.085, 0.035, 10), metal);
-    base.position.y = -0.237;
-    this.model.add(handle, cap, chamber, base);
-    for (let i = 0; i < 4; i++) {
-      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.15, 5), metal);
-      const angle = (i + 0.5) * Math.PI / 2;
-      bar.position.set(Math.cos(angle) * 0.073, -0.156, Math.sin(angle) * 0.073);
-      this.model.add(bar);
-    }
+  constructor(scene: THREE.Scene, props: THREE.Group) {
+    this.model = modelPart(props, 'Hand lantern').clone();
+    const body = modelMesh(this.model, 'Copper body and guards');
+    body.material = body.material.clone();
+    // Attenuate nearby point lights on the copper so its paint stays visible around the chamber.
+    body.material.onBeforeCompile = (shader) => {
+      const pointLight = 'getPointLightInfo( pointLight, geometryPosition, directLight );';
+      const lighting = THREE.ShaderChunk.lights_fragment_begin.replace(pointLight, `${pointLight}
+        float lampDistance = length( pointLight.position - geometryPosition );
+        directLight.color *= mix( 0.004, 1.0, smoothstep( 0.25, 0.5, lampDistance ) );`);
+      shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_begin>', lighting);
+    };
+    body.material.emissive.setHex(0x322116);
+    const glass = modelMesh(this.model, 'Amber glass') as THREE.Mesh;
+    glass.material = new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xffdcad });
+    glass.castShadow = false;
     this.model.name = 'Shepherd’s lantern';
     this.model.visible = false;
     this.light.name = 'Lantern light';
@@ -35,6 +34,6 @@ export class LanternView {
     this.model.position.copy(hand);
     this.model.rotation.y = yaw;
     this.light.position.copy(hand);
-    this.light.position.y -= 0.16;
+    this.light.position.y -= 0.20;
   }
 }

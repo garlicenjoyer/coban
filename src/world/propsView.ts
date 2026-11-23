@@ -14,8 +14,6 @@ const COLORS = {
   trunk: 0x8a6446,
   canopy: 0x6e9a5a,
   marker: 0xf4efe6,
-  lime: 0xf3eee2,
-  roof: 0xc0623e,
   cairn: 0xb5a690,
 };
 
@@ -155,32 +153,6 @@ export function createPropsView(t: Terrain, map: MapProps): THREE.Group {
   trunkMesh.castShadow = canopyMesh.castShadow = true;
   root.add(trunkMesh, canopyMesh);
 
-  // Village houses: lime-washed walls under a low terracotta hip roof.
-  const lime = toonMaterial({ color: COLORS.lime });
-  const roofMat = toonMaterial({ color: COLORS.roof });
-  const roofGeo = new THREE.ConeGeometry(Math.SQRT1_2, 1, 4, 1).rotateY(Math.PI / 4).translate(0, 0.5, 0);
-  for (const p of map.props) {
-    if (p.kind !== 'box' || p.role !== 'building') continue;
-    const walls = new THREE.Mesh(boxGeo, lime);
-    walls.position.set(p.x, p.y, p.z);
-    walls.scale.set(p.hx * 2, p.hy * 2, p.hz * 2);
-    const roof = new THREE.Mesh(roofGeo, roofMat);
-    roof.position.set(p.x, p.y + p.hy, p.z);
-    roof.scale.set(p.hx * 2 + 0.6, 1.3, p.hz * 2 + 0.6);
-    walls.castShadow = walls.receiveShadow = roof.castShadow = true;
-    root.add(walls, roof);
-  }
-  // The minaret: a slim white shaft, a balcony ring and a lead-grey cone.
-  for (const m of cyls('minaret')) {
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(m.radius * 0.85, m.radius, m.height, 12), lime);
-    shaft.position.set(m.x, m.y + m.height / 2, m.z);
-    const ring = new THREE.Mesh(new THREE.CylinderGeometry(m.radius * 1.35, m.radius * 1.35, 0.4, 12), lime);
-    ring.position.set(m.x, m.y + m.height * 0.8, m.z);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(m.radius * 0.95, 3, 12), toonMaterial({ color: 0x8c9096 }));
-    cap.position.set(m.x, m.y + m.height + 1.5, m.z);
-    shaft.castShadow = cap.castShadow = true;
-    root.add(shaft, ring, cap);
-  }
   // Uncle Ahmet's cairns: three stacked, slightly offset stones.
   const cairns = cyls('cairn');
   if (cairns.length) {

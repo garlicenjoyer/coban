@@ -26,10 +26,12 @@ export type PropRole =
   | 'ruin'
   | 'cypress'
   | 'pine'
-  /** A village house (whitewashed walls; the view adds a roof). */
+  /** Footprint of a village building. */
   | 'building'
   /** The village mosque's minaret. */
   | 'minaret'
+  | 'villageTree'
+  | 'villageFountain'
   /** One of Uncle Ahmet's old cairns on the routes he walked. */
   | 'cairn'
   /** The broken walls of Uncle Ahmet's fallen hut (drawn by the works view). */

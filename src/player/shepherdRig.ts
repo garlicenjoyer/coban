@@ -19,7 +19,7 @@ const zAxis = v(0, 0, 1);
 const { clamp, lerp, smoothstep } = THREE.MathUtils;
 
 type Side = 'L' | 'R';
-export type ShepherdCue = DogCommand | 'crook' | 'call' | 'whistle' | 'pet' | 'gate' | 'horn';
+export type ShepherdCue = DogCommand | 'crook' | 'call' | 'whistle' | 'pet' | 'gate' | 'horn' | 'salve' | 'bread';
 interface Limb {
   upper: THREE.Bone;
   lower: THREE.Bone;
@@ -229,7 +229,10 @@ export class ShepherdRig {
     const phase = stride * TAU;
     const horn = cue?.kind === 'horn' ? Math.sin(Math.PI * cue.progress) : 0;
     const engine = bike.engineOn ? Math.sin(this.elapsed * 36) * 0.004 : 0;
-    const reach = Math.max(this.reach, cue?.kind === 'pet' ? Math.sin(Math.PI * cue.progress) : 0) * (1 - ride) * Number(!incident) * (1 - working);
+    const offering = cue?.kind === 'salve' || cue?.kind === 'bread';
+    const handsLow = cue?.kind === 'pet' || offering;
+    const reach = Math.max(this.reach, handsLow && cue ? Math.sin(Math.PI * cue.progress) : 0)
+      * (1 - ride) * Number(!incident) * (1 - working);
 
     const onFoot = (1 - ride) * (1 - (crash?.strength ?? 0));
     const armDrive = Math.sin(phase + 0.30);
@@ -295,9 +298,10 @@ export class ShepherdRig {
     if (reach > 0.001) {
       const petting = cue?.kind === 'pet';
       const pulse = Math.sin(this.elapsed * (petting ? 17 : 8));
-      const y = 0.54 + pulse * 0.055;
-      this.reachTo(this.armL, v(0.23, y, 0.55 + pulse * 0.045), v(1, -1), reach);
-      if (!petting) this.reachTo(this.armR, v(-0.23, y - pulse * 0.045, 0.52), v(-1, -1), reach);
+      const y = offering ? 0.59 + 0.19 * (1 - reach) : 0.54 + pulse * 0.055;
+      this.reachTo(this.armL, v(0.23, y, offering ? 0.58 : 0.55 + pulse * 0.045), v(1, -1), reach);
+      if (offering) this.rotate('handL', xAxis, -0.94 * reach);
+      if (!handsLow) this.reachTo(this.armR, v(-0.23, y - pulse * 0.045, 0.52), v(-1, -1), reach);
     }
 
     const freeArms = onFoot * (1 - reach);
@@ -324,7 +328,7 @@ export class ShepherdRig {
       this.reachTo(this.armL, v(0.36, 1.17, 0.39 + Math.sin(phase) * 0.035 * this.pace), v(1, -1), 1 - reach);
     }
 
-    if (cue && cue.kind !== 'horn' && cue.kind !== 'pet' && !incident && !work) {
+    if (cue && cue.kind !== 'horn' && cue.kind !== 'pet' && cue.kind !== 'salve' && cue.kind !== 'bread' && !incident && !work) {
       const onBike = cue.kind !== 'crook' && cue.kind !== 'call' && cue.kind !== 'gate';
       this.act(cue.kind, cue.progress, onBike ? 1 - ride * 0.15 : 1 - ride);
     }
@@ -358,7 +362,7 @@ export class ShepherdRig {
     this.cape.update(dt, floor);
   }
 
-  private act(kind: Exclude<ShepherdCue, 'horn' | 'pet'>, t: number, weight: number): void {
+  private act(kind: Exclude<ShepherdCue, 'horn' | 'pet' | 'salve' | 'bread'>, t: number, weight: number): void {
     const amount = smoothstep(t, 0, 0.22) * (1 - smoothstep(t, 0.67, 1)) * weight;
     switch (kind) {
       case 'crook': {

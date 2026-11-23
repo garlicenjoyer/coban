@@ -136,6 +136,47 @@ export function sheepScenes() {
   return [template, ...variants];
 }
 
+function dogCollar(parent, spiked) {
+  const attachment = group(parent, spiked ? 'Spiked tasma' : 'Plain tick collar');
+  const p = new Parts();
+  const half = spiked ? 0.040 : 0.025;
+  const width = 0.249, height = 0.229;
+  const leather = (x, y, z) => new T.Color(spiked ? 0x4e3532 : 0x8b4e39)
+    .lerp(new T.Color(spiked ? 0x886050 : 0xb97e52), 0.38 + 0.27 * Math.sin(x * 31 + y * 25 + z * 39));
+  const band = [[0.966, -half], [1, -half], [1.017, -half + 0.006], [1.017, half - 0.006],
+    [1, half], [0.966, half], [0.966, -half]];
+  const profile = new T.LatheGeometry(band.map(([r, z]) => new T.Vector2(r, z)), 36);
+  p.add(profile.scale(width, 1, height), leather, [0, 0, 0], undefined, [Math.PI / 2, 0, 0]);
+  const point = (a, distance = 0, z = 0) => [(width + distance) * Math.cos(a), (height + distance) * Math.sin(a), z];
+  for (const z of [-half + 0.008, half - 0.008]) {
+    p.torus([0, 0, z], 1, 0.009, spiked ? 0x402f2b : 0x75523d, undefined, [width, height, 0.25], Math.PI * 2, 32);
+    for (let i = 0; i < 28; i++) {
+      const a = i / 28 * Math.PI * 2;
+      p.rod(point(a, 0.006, z), point(a + 0.068, 0.006, z), 0.0016, 0.0016, 0xc29970, 5);
+    }
+  }
+  const a = 2.85;
+  const metal = spiked ? 0xb1af9d : 0xbc9a64;
+  for (const z of [-half * 0.8, half * 0.8]) p.rod(point(a - 0.13, 0.014, z), point(a + 0.13, 0.014, z), 0.005, 0.005, metal, 7);
+  for (const b of [a - 0.13, a + 0.13]) p.rod(point(b, 0.014, -half * 0.8), point(b, 0.014, half * 0.8), 0.005, 0.005, metal, 7);
+  p.rod(point(a, 0.018, -half * 0.67), point(a, 0.018, half * 0.85), 0.0035, 0.0026, metal, 6);
+  if (spiked) {
+    const steel = (x, y, z) => new T.Color(0x686c66)
+      .lerp(new T.Color(0xc4bba6), 0.48 + 0.31 * Math.sin(x * 31 + y * 41 + z * 56));
+    for (let i = 0; i < 11; i++) {
+      const b = (i + 0.14) / 11 * Math.PI * 2;
+      if (Math.abs(a - b) < 0.20) continue;
+      const z = i % 2 ? 0.009 : -0.009;
+      p.rod(point(b, 0.001, z), point(b, 0.012, z), 0.020, 0.016, 0x66625a, 9)
+        .rod(point(b, 0.011, z), point(b + 0.032, 0.075, z - 0.006), 0.013, 0.0024, steel, 5);
+    }
+  } else {
+    p.torus([0.109, -0.226, 0.012], 0.012, 0.003, metal, [0, 0.3, 0], undefined, Math.PI * 2, 12);
+    p.oval([0.109, -0.250, 0.015], [0.013, 0.019, 0.006], 0xbb965a, [0.1, 0.2, 0.18], 10);
+  }
+  p.mesh(attachment, spiked ? 'Stitched leather and forged points' : 'Leather band and brass buckle');
+}
+
 export function dogModel() {
   const root = group(null, 'Karabaş');
   const fur = (x, y, z) => new T.Color(0xdab37a).lerp(new T.Color(y > 0 ? 0x865f40 : 0xebd0a1),
@@ -175,13 +216,10 @@ export function dogModel() {
   new Parts().oval([0, -0.042, -0.143], [0.101, 0.05, 0.136], 0x49382e, [0.08, 0, 0], 14)
     .oval([0, -0.009, -0.176], [0.066, 0.016, 0.075], 0xb46656, undefined, 12).mesh(jaw, 'Lower jaw');
 
-  const collar = new Parts().torus([0, 0.225, -0.518], 0.184, 0.027, 0x65362b, [Math.PI / 2 - 0.32, 0, 0], [1.05, 1, 0.82]);
-  for (let i = 0; i < 8; i++) {
-    const a = i / 8 * Math.PI * 2;
-    collar.oval([Math.cos(a) * 0.204, 0.225 + Math.sin(a) * 0.055, -0.518 + Math.sin(a) * 0.18],
-      [0.014, 0.015, 0.014], 0xa38a57, undefined, 8);
-  }
-  collar.oval([0, 0.139, -0.698], [0.032, 0.041, 0.012], 0xb68c49).mesh(body, 'Leather collar');
+  const collars = group(body, 'Collar anchor', [0, 0.221, -0.497]);
+  collars.rotation.x = 0.66;
+  dogCollar(collars, false);
+  dogCollar(collars, true);
 
   const tail = group(root, 'Tail', [0, 0.804, 0.53]);
   new Parts().sweep([[0, 0, 0, 0.077, 0.077], [0.008, 0.090, 0.107, 0.065, 0.064],

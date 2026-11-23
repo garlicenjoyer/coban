@@ -53,19 +53,25 @@ import { ShopView } from './ui/shopView';
 import { SatchelView } from './ui/satchelView';
 import { PauseMenu } from './ui/pauseMenu';
 import { ValleyProps } from './world/valleyProps';
+import { VillageView } from './world/villageView';
+import { onVillagePaving } from './world/villagePlan';
 import { HerdingCues, herdingCueSettings } from './world/herdingCues';
 import { Coach } from './tutorial/coach';
 import { CoachView } from './ui/coachView';
 import { TitleScreen } from './ui/titleScreen';
 
 async function main() {
-  const [shepherd, sheepModel, dogModel, bikeModel, wolfModel, propModels] = await Promise.all([
+  // The valley by default; ?map=test opens the greybox test map.
+  const mapId = new URLSearchParams(location.search).get('map') === 'test' ? 'test' : 'valley';
+  const [shepherd, sheepModel, dogModel, bikeModel, wolfModel, propModels, fieldProps, villageModels] = await Promise.all([
     ShepherdRig.load(`${import.meta.env.BASE_URL}models/turkish-shepherd.glb`),
     loadGameModel('aegean-sheep'),
     loadGameModel('karabas'),
     loadGameModel('field-motorcycle'),
     loadGameModel('anatolian-wolf'),
     loadGameModel('valley-props'),
+    loadGameModel('field-props'),
+    MAPS[mapId].layout.village ? loadGameModel('village') : null,
     RAPIER.init(),
   ]);
 
@@ -78,8 +84,6 @@ async function main() {
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1.05;
 
-  // The valley by default; ?map=test opens the greybox test map.
-  const mapId = new URLSearchParams(location.search).get('map') === 'test' ? 'test' : 'valley';
   useMap(MAPS[mapId]);
   // Bigger maps see farther: push the aerial haze out so the far side still reads.
   postSettings.hazeDistance *= Math.max(1, MAPS[mapId].size / 850);
@@ -127,6 +131,7 @@ async function main() {
     reserved: (x, z) =>
       insidePen(x, z, 6) ||
       Math.hypot(x - layout.house.x, z - layout.house.z) < 26 ||
+      onVillagePaving(village, x, z, 0.48) ||
       (!!village && Math.hypot(x - village.x, z - village.z) < village.r),
   });
   scene.add(dressing.root);
@@ -139,8 +144,10 @@ async function main() {
   // The homestead's art pass: the stone ağıl, the çeşme, the yard and its hens.
   const homestead = new HomesteadView(sim.terrain, sim.map);
   scene.add(homestead.root);
-  // Shopfronts in the village, herb patches, the milking stand and churn.
-  const economyView = new EconomyView(sim.terrain, valleyProps);
+  const villageView = village && villageModels ? new VillageView(sim.terrain, village, sim.map, villageModels, valleyProps) : undefined;
+  if (villageView) scene.add(villageView.root);
+  // Wild herbs and finds, the milking stand and churn.
+  const economyView = new EconomyView(sim.terrain, valleyProps, fieldProps);
   scene.add(economyView.root);
   scene.add(new NotesView(sim.terrain, sim.map).root);
   // Read the land (hold G / D-pad ←): hazards baked once, re-baked when a cistern is built.
@@ -149,7 +156,7 @@ async function main() {
     if (e.id === 'cistern') terrainView.bakeHazards(sim.obstacles, sim.water.points);
   });
   let readLand = 0;
-  const works = new WorksView(() => sim);
+  const works = new WorksView(() => sim, fieldProps);
   scene.add(works.root);
 
   // The pen gate swings on a hinge at its north end; open = swung out to the east.
@@ -261,7 +268,9 @@ async function main() {
   });
 
   // Views read the *current* sim objects through getters: reset rebuilds the world and player.
-  const playerView = new PlayerView(scene, sim, shepherd, bikeView, { teaTable: house.teaTable, milkingStation: economyView.milkingStation, press: economyView.press }, (success) => atBike(success ? 'kick' : 'kickFail'));
+  const stations = { teaTable: house.teaTable, milkingStation: economyView.milkingStation, press: economyView.press };
+  const playerView = new PlayerView(scene, sim, shepherd, bikeView, stations, fieldProps,
+    (success) => atBike(success ? 'kick' : 'kickFail'));
   const rig = new CameraRig(RAPIER, () => sim.world, () => sim.player.collider, groundAt, canvas);
 
   // ---------- debug ----------
@@ -395,7 +404,7 @@ async function main() {
       satchel.update();
       perf.lap('field kit and cards');
       tracks.update();
-      works.update(playerView.renderPos);
+      works.update(playerView.leftHand, flockView.halterPoint);
       readLand += ((input.readLand && !sim.riding ? 1 : 0) - readLand) * Math.min(1, dt * 6);
       terrainView.setReadLand(readLand, sim.player.pos.x, sim.player.pos.z);
       if (sim.building && performance.now() - lastKnock > 420) {
@@ -431,6 +440,7 @@ async function main() {
       });
       perf.lap('audio');
       daylight.update(sim.hour, sim.tasks.day, playerView.renderPos, cam.position);
+      villageView?.update(sim.hour, sim.tasks.day, cam.position);
       updateWind(performance.now() / 1000, dt, sim.hour);
       labels.visible = config.debug.showLabels;
       perf.lap('daylight');
