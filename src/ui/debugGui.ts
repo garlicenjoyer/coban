@@ -391,6 +391,15 @@ export class DebugUI {
     }
     // One prompt at a time. Leading a sheep on the rope is the fallback reminder.
     if (!prompt && waterPrompt) prompt = waterPrompt;
+    if (!prompt) {
+      const key = info.device === 'gamepad' ? 'A' : 'E';
+      const errand = sim.errandTarget;
+      if (errand) {
+        const { stop } = errand;
+        const progress = Math.round(sim.errands.fraction(stop) * 100);
+        prompt = `${stop.seconds ? 'Hold ' : ''}${key} — ${stop.action}${progress ? ` (${progress}%)` : ''}`;
+      } else if (sim.encounterPrompt) prompt = `${key} — ${sim.encounterPrompt}`;
+    }
     if (!prompt && sim.ledSheep) prompt = 'On the rope · use it again to let go';
     if (prompt !== this.lastPrompt) {
       this.lastPrompt = prompt;
@@ -418,7 +427,7 @@ export function promptHtml(text: string): string {
     .split(' · ')
     .map((part) => {
       let m = part.match(/^(hold )?((?:[A-Z][A-Za-z]*)(?: \/ [A-Z]+)?) — (.+)$/i);
-      if (m && /^(E|R|Space|R \/ RB|H|F)$/.test(m[2]))
+      if (m && /^(A|E|R|Space|R \/ RB|H|F)$/.test(m[2]))
         return `${m[1] ? '<span class="hold">hold</span>' : ''}${caps(m[2])}${escHtml(m[3])}`;
       m = part.match(/^([A-Z]) ([a-z].*)$/);
       if (m) return `${caps(m[1])}${escHtml(m[2])}`;

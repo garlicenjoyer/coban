@@ -101,6 +101,9 @@
         background: var(--glass-strong); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
         border: 1px solid var(--glass-line); box-shadow: var(--shadow-soft); pointer-events: none; opacity: 0; transition: opacity 0.4s;
       }
+      #toast.encounter { top: auto; bottom: 116px; width: max-content; max-width: min(520px, calc(100vw - 32px)); text-align: center; border-radius: 12px; }
+      body.hint-off #toast.encounter { bottom: 77px; }
+      body.paused #toast.encounter, body.mapopen #toast.encounter { visibility: hidden; }
       #taskcard {
         padding: 11px 15px 10px; border-radius: 4px 10px 6px 12px; color: var(--paper-ink);
         background: linear-gradient(var(--paper-1), #efe3c3); box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset, 0 6px 18px rgba(0,0,0,0.28);
@@ -123,8 +126,10 @@
         position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(0.3deg); display: none;
         width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 80px); overflow: auto; padding: 18px 22px;
         color: #2b241b; background: linear-gradient(#f6eed9, #ecdfbd); border-radius: 6px; box-shadow: 0 8px 30px rgba(0,0,0,0.4);
-        font: 15px/1.5 var(--serif); pointer-events: none;
+        font: 15px/1.5 var(--serif); overscroll-behavior: contain;
       }
+      #journal:focus { outline: none; }
+      body.journalopen #taskdone, body.journalopen #toast, body.journalopen #prompt { visibility: hidden; }
       #journal h2 { margin: 0 0 8px; font-size: 19px; }
       #journal ol { list-style: none; margin: 0; padding: 0; }
       #journal li { display: flex; gap: 8px; padding: 2px 0; }

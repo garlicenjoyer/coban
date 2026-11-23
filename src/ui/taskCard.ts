@@ -35,6 +35,7 @@ export class TaskCard {
     document.getElementById('left')!.appendChild(this.card);
     this.journal = document.createElement('div');
     this.journal.id = 'journal';
+    this.journal.tabIndex = 0;
     document.body.appendChild(this.journal);
     this.banner = document.createElement('div');
     this.banner.id = 'taskdone';
@@ -43,7 +44,8 @@ export class TaskCard {
 
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
-      if (e.code === 'KeyJ') this.journalOpen = !this.journalOpen;
+      if (e.code === 'KeyJ') this.setJournal(!this.journalOpen);
+      else if (e.code === 'Escape' && this.journalOpen) this.setJournal(false);
     });
     events.on('taskDone', (e) => {
       const t = this.sim().tasks.tasks[e.index];
@@ -52,7 +54,7 @@ export class TaskCard {
     });
     events.on('dayDone', () => {
       this.flash(`Day ${this.sim().tasks.day} complete`);
-      this.journalOpen = true;
+      this.setJournal(true);
       this.onDone();
     });
     events.on('simReset', () => {
@@ -61,17 +63,17 @@ export class TaskCard {
     events.on('goldenHour', () => {
       if (this.sim().tasks.enabled) this.flash('Golden hour · one hour until sunset');
     });
-    events.on('restedUntilDark', () => (this.journalOpen = false));
+    events.on('restedUntilDark', () => this.setJournal(false));
     events.on('bark', ({ kind }) => {
       const sim = this.sim();
       const wolf = sim.nightWolf;
       if (this.nightWarned || !wolf || sim.dog.perceived !== wolf || (kind !== 'alert' && kind !== 'warning')) return;
       this.nightWarned = true;
-      this.journalOpen = false;
+      this.setJournal(false);
       this.flash('Karabaş sounds the alarm');
     });
     events.on('slept', (e) => {
-      this.journalOpen = false;
+      this.setJournal(false);
       const r = this.sim().nightReport(e.day - 1);
       if (!r || (!r.taken && !r.scattered && !r.wounded)) this.flash(`You sleep soundly${r?.sleptAt === 'hut' ? ' at the hut' : ''}. Day ${e.day}`);
       else
@@ -122,6 +124,16 @@ export class TaskCard {
   /** The notebook (J) is open. */
   get isJournalOpen(): boolean {
     return this.journalOpen;
+  }
+
+  private setJournal(open: boolean): void {
+    this.journalOpen = open;
+    this.journal.style.display = open ? 'block' : 'none';
+    document.body.classList.toggle('journalopen', open);
+    if (open) {
+      if (document.pointerLockElement) document.exitPointerLock();
+      this.journal.focus({ preventScroll: true });
+    } else this.journal.blur();
   }
 
   private flash(text: string, ms = 2200): void {
@@ -202,7 +214,6 @@ export class TaskCard {
       this.lastHtml = html;
     }
 
-    this.journal.style.display = this.journalOpen ? 'block' : 'none';
     if (this.journalOpen) {
       const rows = T.tasks
         .map((t, i) => {
@@ -268,7 +279,19 @@ export class TaskCard {
         eco.tonic ? 'tonic in their water tonight' : null,
       ].filter(Boolean);
       const village = vill.length ? `<p class="sum">${esc(vill.join(' · '))}</p>` : '';
-      this.journal.innerHTML = `<h2>Shepherd’s notebook — Day ${T.day} · ${weekday(T.day)} · ${season(T.day)}</h2><ol>${rows}</ol>${summary}${sunset}${night}${flock}${dogLine}${purse}${village}${kit}${notes}<p class="foot">J — close</p>`;
+      const errands = sim.errands.definitions.flatMap((errand) => {
+        const index = sim.errands.status(errand.resident);
+        if (index === undefined) return [];
+        const stop = errand.stops[index];
+        return stop
+          ? [`<li><span>→</span><div><b>${esc(errand.title)}</b> · ${index + 1}/${errand.stops.length}<br>${esc(stop.action[0].toUpperCase() + stop.action.slice(1))} at ${esc(stop.place)} · ${this.where(stop.x, stop.z, camYaw)}</div></li>`]
+          : [`<li class="done"><span>✓</span> ${esc(errand.title)}</li>`];
+      });
+      const optional = errands.length ? `<div class="sum"><b>Optional errands</b><ol>${errands.join('')}</ol></div>` : '';
+      const people = sim.residents.list.length
+        ? `<div class="sum"><b>Around the valley</b><ol>${sim.residents.list.map((r) => `<li>${esc(r.profile.name)} · ${r.settled ? 'at' : 'heading toward'} ${esc(r.destination.place)}</li>`).join('')}</ol></div>`
+        : '';
+      this.journal.innerHTML = `<h2>Shepherd’s notebook — Day ${T.day} · ${weekday(T.day)} · ${season(T.day)}</h2><ol>${rows}</ol>${optional}${people}${summary}${sunset}${night}${flock}${dogLine}${purse}${village}${kit}${notes}<p class="foot">J — close</p>`;
     }
   }
 }

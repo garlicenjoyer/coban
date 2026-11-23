@@ -10,6 +10,7 @@ import type { Sim } from '../sim';
 import type { Personality } from '../flock/sheep';
 import type { ItemId } from '../player/satchel';
 import type { HerbId, LedgerLine } from '../economy/economy';
+import type { ErrandProgress } from '../life/errands';
 import { activeMap } from '../world/map';
 import { SUNSET_HOUR } from './config';
 
@@ -56,6 +57,8 @@ export interface SaveData {
   water: { kind: string; name: string; x: number; z: number; radius: number; liters: number | null; capacity?: number }[];
   satchel: { id: ItemId; uses: number }[];
   notesRead: string[];
+  /** Accepted and completed errands, including delivery cargo in transit. */
+  errands?: ErrandProgress;
   signsSeen: number[];
   visited: string[];
   lastNight: NightReport | null;
@@ -160,6 +163,7 @@ export function snapshot(sim: Sim, opts: { midday?: boolean } = {}): SaveData {
       .map((p) => ({ kind: p.kind, name: p.name, x: p.x, z: p.z, radius: p.radius, liters: p.liters, capacity: p.capacity })),
     satchel: sim.satchel.slots.map((s) => ({ id: s.id, uses: Number.isFinite(s.uses) ? s.uses : -1 })),
     notesRead: [...sim.notesRead],
+    errands: sim.errands.save(),
     signsSeen: [...sim.signsSeen],
     visited: [...sim.visited],
     lastNight: sim.nightReport(sim.tasks.day - 1) ?? null,
@@ -176,9 +180,9 @@ export function usable(data: unknown): data is SaveData {
   return !!d && d.v === SAVE_VERSION && d.map === activeMap().id && Array.isArray(d.sheep);
 }
 
-/** Can the day be checkpointed now? Not at night, nor once the day's tasks are done. */
-export function canCheckpoint(sim: Sim): boolean {
-  return sim.tasks.enabled && !sim.tasks.finished && !sim.nightWatchActive && sim.hour < SUNSET_HOUR + 0.5;
+/** Keep daytime checkpoints, including errand progress after the main tasks when requested. */
+export function canCheckpoint(sim: Sim, options: { afterDayTasks?: boolean } = {}): boolean {
+  return sim.tasks.enabled && (options.afterDayTasks || !sim.tasks.finished) && !sim.nightWatchActive && sim.hour < SUNSET_HOUR + 0.5;
 }
 
 export { pack as packGrass, unpack as unpackGrass };
