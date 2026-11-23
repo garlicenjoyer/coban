@@ -10,6 +10,7 @@ export interface Vec3Like {
 }
 
 export type BarkKind = 'alert' | 'warning' | 'attack' | 'happy' | 'found';
+export type LifeSound = 'swallow' | 'hoopoe' | 'fox' | 'wings' | 'rustle' | 'greet' | 'step';
 
 export interface GameEvents {
   /** Crook swung: pushes animals away inside a cone. */
@@ -116,6 +117,9 @@ export interface GameEvents {
   noteRead: { id: string; first: boolean };
   /** Karabaş was bitten driving off a wolf. */
   dogHurt: { tick: number };
+  encounter: { name: string; text: string };
+  errandChanged: { title: string };
+  lifeSound: Vec3Like & { kind: LifeSound };
   /** Simulation was reset (replay, debug). */
   simReset: { tick: number };
 }

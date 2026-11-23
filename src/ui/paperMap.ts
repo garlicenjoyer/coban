@@ -520,6 +520,28 @@ export class PaperMap {
       g.fillText(target.label, px(target.x) + 16, py(target.z) - 8);
     }
 
+    // Active errands are small green diamonds beside the main task's pencil circle.
+    for (const { errand, stop } of sim.errands.targets()) {
+      const x = px(stop.x), z = py(stop.z);
+      const left = errand.resident === 'emre' || errand.resident === 'hasan';
+      const sign = left ? -1 : 1;
+      g.strokeStyle = '#4a684d';
+      g.fillStyle = '#f3e7c9';
+      g.lineWidth = 1.5;
+      g.beginPath();
+      g.moveTo(x, z - 5);
+      g.lineTo(x + 5, z);
+      g.lineTo(x, z + 5);
+      g.lineTo(x - 5, z);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      g.font = 'italic 13px Georgia, serif';
+      g.textAlign = left ? 'right' : 'left';
+      g.fillStyle = '#365540';
+      g.fillText(errand.title, x + sign * 9, z + 15);
+    }
+
     // Uncle Ahmet's hand: soft grey graphite, a slanting script, his old routes dotted.
     // What he knew from the start is there on the first morning; his notes add the rest.
     const AHMET = 'rgba(52, 56, 74, 0.85)';

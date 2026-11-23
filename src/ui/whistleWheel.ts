@@ -43,6 +43,7 @@ export class WhistleWheel {
 
     this.toast = document.createElement('div');
     this.toast.id = 'toast';
+    this.toast.setAttribute('role', 'status');
     document.body.appendChild(this.toast);
 
     events.on('dogCommand', (e) => {
@@ -54,12 +55,14 @@ export class WhistleWheel {
       if (!e.willObey) this.show(`${this.dogName()} looks at you… and ignores it (bond ${Math.round(this.bond())})`);
     });
     events.on('dogPetted', (e) => this.show(e.praise ? `Good dog! ${this.dogName()} wags (bond ${Math.round(e.bond)})` : `You pet ${this.dogName()} (bond ${Math.round(e.bond)})`));
+    events.on('encounter', ({ name, text }) => this.show(`${name} · ${text}`, true));
   }
 
-  show(text: string): void {
+  show(text: string, encounter = false): void {
+    this.toast.classList.toggle('encounter', encounter);
     this.toast.textContent = text;
     this.toast.style.opacity = '1';
-    this.toastUntil = performance.now() + 2600;
+    this.toastUntil = performance.now() + (encounter ? 5400 : 2600);
   }
 
   /**

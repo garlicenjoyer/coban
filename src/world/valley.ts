@@ -18,6 +18,7 @@ import { fbm, rng } from './noise';
 import { valleyNotes } from './valleyNotes';
 import { Surface, Terrain } from './terrain';
 import { COFFEEHOUSE, COURTYARD_TREES, FOUNTAIN, MOSQUE, SQUARE_TREE } from './villagePlan';
+import { VALLEY_ERRANDS } from '../life/valleyErrands';
 
 export const VALLEY_SIZE = 1200;
 export const VALLEY_SAMPLES = 601; // 600 cells, 2 m per cell (the grass map's texel)
@@ -740,6 +741,55 @@ export const VALLEY_MAP: MapDef = {
     'To the flock': [0, 0],
   }),
   notes: AHMET.notes,
+  errands: VALLEY_ERRANDS,
+  residents: [
+    { resident: 'emre', points: [
+      { x: -351, z: 281 }, { x: -344, z: 266 }, { x: -330, z: 260 },
+      { x: -290, z: 252 }, { x: -220, z: 244 }, { x: -209, z: 241 },
+      { x: -215, z: 239 }, { x: -290, z: 248 }, { x: -332, z: 257 },
+      { x: -348, z: 264 }, { x: -356, z: 276 }, { x: -357, z: 282 },
+    ], stops: [
+      { hour: 0, point: 0, place: 'the tractor pullout', activity: 'I keep the tractor here overnight.' },
+      { hour: 7, point: 3, place: 'the upper field road', activity: 'I’m checking the stone terraces before it gets hot.', pose: 'check' },
+      { hour: 11.75, point: 5, place: 'the dere turn', activity: 'I’m taking my lunch near the dere road.' },
+      { hour: 14.25, point: 8, place: 'the lower field road', activity: 'I’m making a last pass along the lower field.', pose: 'check' },
+      { hour: 18, point: 0, place: 'the tractor pullout', activity: 'That’s the tractor put away for today.' },
+    ] },
+    { resident: 'zeynep', points: [
+      { x: 397, z: -359 }, { x: 406, z: -362 }, { x: 408, z: -366 },
+      { x: 402, z: -358 }, { x: 389, z: -333 }, { x: 382, z: -321 }, { x: 355, z: -284 },
+      { x: 353, z: -278 }, { x: 357, z: -280 }, { x: 386, z: -322 }, { x: 393, z: -332 },
+      { x: 400, z: -349 },
+    ], stops: [
+      { hour: 0, point: 0, place: 'the western edge of the square', activity: 'I park here when the milk run is done.' },
+      { hour: 6.75, point: 2, place: 'the village square', activity: 'I’m making the morning milk collection.', pose: 'check' },
+      { hour: 8.5, point: 6, place: 'the lower milk road', activity: 'I’m taking the empty churns down from the village.', pose: 'check' },
+      { hour: 12.75, point: 10, place: 'the uphill milk road', activity: 'I’m checking the road before the afternoon run.', pose: 'check' },
+      { hour: 16.5, point: 0, place: 'the western edge of the square', activity: 'The milk is in for the day. I’ll set off again tomorrow.' },
+    ] },
+    { resident: 'ayse', points: [
+      { x: -359, z: 291 }, { x: -356, z: 286 }, { x: -334, z: 284 },
+      { x: -332, z: 288 }, { x: -343, z: 286 }, { x: -346, z: 291 },
+      { x: -346, z: 300 }, { x: -345, z: 310 },
+      { x: -353, z: 301 }, { x: -359, z: 297 },
+    ], stops: [
+      { hour: 0, point: 0, place: 'the path above the ağıl', activity: 'I start from the path at first light.' },
+      { hour: 7.25, point: 3, place: 'the north edge of the olive grove', activity: 'I’m sorting the olives that fell onto the nets.', pose: 'sort' },
+      { hour: 12, point: 7, place: 'the path east of the cottage', activity: 'I’m having a glass of çay in the shade.', pose: 'tea' },
+      { hour: 15, point: 8, place: 'the homestead path', activity: 'I’m putting the baskets in order for tomorrow.', pose: 'sort' },
+      { hour: 18.5, point: 0, place: 'the path above the ağıl', activity: 'The baskets can wait until morning.' },
+    ] },
+    { resident: 'hasan', points: [
+      { x: 413, z: -374 }, { x: 422, z: -374 }, { x: 426, z: -363 },
+      { x: 418, z: -367 }, { x: 416, z: -349 }, { x: 411, z: -357 }, { x: 411, z: -368 },
+    ], stops: [
+      { hour: 0, point: 0, place: 'the north side of the square', activity: 'I’m done with the square for today.' },
+      { hour: 8, point: 1, place: 'the north lane', activity: 'I sweep the lanes before the shopkeepers open their doors.', pose: 'sweep' },
+      { hour: 10.75, point: 3, place: 'the village fountain', activity: 'I’m clearing leaves from the fountain.', pose: 'sweep' },
+      { hour: 15.5, point: 4, place: 'beside the kahvehane', activity: 'There’s time for a glass of çay now.', pose: 'tea' },
+      { hour: 19, point: 0, place: 'the north side of the square', activity: 'I’ll open up the square again in the morning.' },
+    ] },
+  ],
   pencil: AHMET.pencil,
   goatSpots: [
     { x: L.thornCluster.x + 30, z: L.thornCluster.z - 10 },

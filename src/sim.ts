@@ -35,6 +35,9 @@ import { ARTIFACTS, Economy, GOODS, HERBS, JOBS, MUSEUM_LORE, RUMOURS, UPGRADES,
 import { isThursday, season } from './economy/calendar';
 import type { TradeRequest } from './core/input';
 import { DAY4, FREE_DAY } from './tasks/day4';
+import { Residents } from './life/residents';
+import { Wildlife, wildlifeNames } from './life/wildlife';
+import { Errands, type ErrandTarget } from './life/errands';
 
 /** Interact presses within this distance of the gate toggle it. */
 export const GATE_REACH = 2.5;
@@ -100,6 +103,11 @@ export class Sim {
   water!: WaterSupply;
   dog!: Kangal;
   wolves!: Wolves;
+  residents!: Residents;
+  wildlife!: Wildlife;
+  errands!: Errands;
+  private hornTime = 0;
+  private observed: { animal: Wildlife['animals'][number]; until: number } | null = null;
   tasks!: TaskSystem;
   bike!: Bike;
   lap!: LapTimer;
@@ -195,6 +203,12 @@ export class Sim {
     this.dog.care = new DogCare(yardLayout(layout).bowl);
     this.wolves?.dispose();
     this.wolves = new Wolves(this.terrain, this.obstacles, this.events);
+    // Ambient actors steer around the terrain and stay out of the physics collision world.
+    this.residents = new Residents(activeMap().residents ?? [], this.terrain, this.obstacles, this.events);
+    this.wildlife = new Wildlife(activeMap(), this.terrain, this.obstacles, this.events);
+    this.errands = new Errands(activeMap().errands ?? []);
+    this.hornTime = 0;
+    this.observed = null;
     const bs = layout.bikeSpawn;
     this.bike = new Bike(bs.x, bs.z, (bs.headingDeg * Math.PI) / 180, this.terrain, this.obstacles, this.events);
     this.bikeBody = world.createRigidBody(this.R.RigidBodyDesc.kinematicPositionBased());
@@ -206,6 +220,7 @@ export class Sim {
     this.setGate(false);
     this.tick = 0;
     this.hour = config.time.startHour;
+    this.residents.setTime(this.hour);
     this.sunsetTallies.clear();
     this.goldenHourAnnounced = false;
     this.nightProbe = null;
@@ -563,6 +578,8 @@ export class Sim {
     const lost = report ? this.scatteredLastNight.filter((s) => this.flock.sheep.includes(s) && s.scattered) : [];
     this.tasks = new TaskSystem(this, lost.length ? [this.findScatteredTask(lost), ...plan] : plan, day);
     this.hour = config.time.startHour;
+    this.residents.setTime(this.hour);
+    this.errands.cancelWork();
     this.goldenHourAnnounced = false;
     // Waking at home: the satchel is refilled from the shelves.
     if (this.sleptAt === 'home') this.satchel.restock();
@@ -865,6 +882,7 @@ export class Sim {
     e.rumour = d.economy.rumour;
     e.ledger.splice(0, e.ledger.length, ...d.economy.ledger);
     e.loadExtra(d.economy.extra ?? {});
+    this.errands.load(d.errands);
     this.finds = ((d.economy.extra?.finds as typeof this.finds | undefined) ?? []).map((f) => ({ ...f, id: this.findSeq++ }));
 
     const dog = this.dog;
@@ -946,6 +964,7 @@ export class Sim {
       this.tasks.resumeAt(d.midday.task, d.midday.done, d.midday.t);
       this.satchel.slots = d.satchel.map((s) => ({ id: s.id, uses: s.uses < 0 ? Infinity : s.uses }));
     }
+    this.residents.setTime(this.hour);
     this.teleport(d.player.x, d.player.z);
     this.events.emit('loaded', { day: d.day, hour: d.midday ? this.hour : undefined });
   }
@@ -965,6 +984,70 @@ export class Sim {
 
   nearGate(x: number, z: number): boolean {
     return Math.hypot(x - this.gatePos.x, z - this.gatePos.z) < GATE_REACH;
+  }
+
+  private encounterNear() {
+    const p = this.player.pos;
+    const resident = this.residents.near(p);
+    if (resident) return { resident } as const;
+    const animal = this.wildlife.near(p);
+    if (animal && !(this.observed?.animal === animal && this.tick < this.observed.until)) return { animal } as const;
+    return null;
+  }
+
+  /** Ambient actions share the context prompt and yield to all existing interact targets. */
+  get encounterPrompt(): string {
+    if (this.bike.rider || this.brewing > 0 || this.hushing) return '';
+    const near = this.encounterNear();
+    if (near?.resident) {
+      const offer = this.errands.offer(near.resident.id);
+      if (offer) return offer.canAccept ? `accept “${offer.errand.title}”` : `ask ${near.resident.profile.name} about an errand`;
+      return near.resident.action(this.tasks.day);
+    }
+    return near?.animal ? `watch the ${wildlifeNames[near.animal.species].toLowerCase()}` : '';
+  }
+
+  private interactWithLife(): boolean {
+    const near = this.encounterNear();
+    if (near?.resident) {
+      const resident = near.resident;
+      const offer = this.errands.discuss(resident.id);
+      if (offer) {
+        const { errand, accepted } = offer;
+        resident.acknowledge(1.8);
+        this.residents.speak(resident, accepted
+          ? `Sağ ol. Start at ${errand.stops[0].place}. I’ve marked the map.`
+          : `${errand.offer} I’ll pay ${errand.reward} ₺.`);
+        if (accepted) {
+          this.events.emit('errandChanged', { title: errand.title });
+        }
+      } else this.residents.greet(resident, {
+        day: this.tasks.day, hour: this.hour, gateOpen: this.gateOpen,
+        flockExposed: this.flock.sheep.length - this.sheepInPen >= 5,
+      });
+    } else if (near?.animal) {
+      const animal = near.animal;
+      this.observed = { animal, until: this.tick + 6 / SIM_DT };
+      this.events.emit('encounter', { name: wildlifeNames[animal.species], text: animal.describe() });
+    } else return false;
+    return true;
+  }
+
+  get errandTarget(): ErrandTarget | undefined {
+    if (!this.riding && !this.hushing && this.brewing === 0) return this.errands.near(this.player.pos);
+  }
+
+  private finishErrandStop(target: ErrandTarget): void {
+    const change = this.errands.advance(target);
+    if (!change) return;
+    const { errand, stop } = target;
+    if (change.done) {
+      this.economy.earn(errand.reward, this.tasks.day, errand.title);
+      this.economy.reputation++;
+    }
+    const text = change.next ? `${stop.note} Next stop is ${change.next.place}.` : `${errand.thanks} +${errand.reward} ₺`;
+    this.events.emit('encounter', { name: errand.title, text });
+    this.events.emit('errandChanged', { title: errand.title });
   }
 
   /** The same action is used for feedback and for input. */
@@ -1518,7 +1601,24 @@ export class Sim {
     // Petting: E next to the dog, unless the gate, a stuck sheep or the bike needs the hands.
     const dog = this.dog;
     const dogDist = Math.hypot(dog.x - p.pos.x, dog.z - p.pos.z);
-    if (f.interact && !usedInteract && !b.rider && !stuckNear && dogDist < 2.5) dog.pet(this.tick);
+    let workingErrand = false;
+    if ((f.interact || f.interactHeld) && !usedInteract && !b.rider && !stuckNear) {
+      const wantsCare = dogDist < 2.5 && (dog.praiseTimer > 0 || dog.care.ticks > 0 || !dog.care.pettedToday);
+      const atWork = this.works.siteNear(p.pos.x, p.pos.z) || this.canMilk(p.pos.x, p.pos.z)
+        || this.canPress(p.pos.x, p.pos.z) || this.sheepToShear(p.pos.x, p.pos.z)
+        || this.milkingNow || this.pressingNow || this.shearingNow;
+      const canMeet = !wantsCare && !atWork && !this.nearBike(p.pos.x, p.pos.z)
+        && !f.hush && !f.rest && this.brewing === 0;
+      const target = canMeet ? this.errands.near(p.pos) : undefined;
+      if (target?.stop.seconds && f.interactHeld) {
+        workingErrand = true;
+        if (this.errands.work(target, SIM_DT)) this.finishErrandStop(target);
+      } else if (f.interact) {
+        if (target && !target.stop.seconds) this.finishErrandStop(target);
+        else if (!target && (!canMeet || !this.interactWithLife()) && dogDist < 2.5) dog.pet(this.tick);
+      }
+    }
+    if (!workingErrand) this.errands.cancelWork();
     // Hold E beside him: he lies still while you pick the ticks off, one by one.
     if (f.interactHeld && !b.rider && !stuckNear && !this.building && dog.care.ticks > 0 && dogDist < config.dogCare.pickReach) {
       dog.heldStill = 0.3;
@@ -1607,6 +1707,16 @@ export class Sim {
       wolves: this.wolves.active(),
       bike: { x: b.x, z: b.z, vx: b.vx, vz: b.vz, heading: b.heading, noise: b.noise },
     });
+    this.hornTime = Math.max(0, this.hornTime - SIM_DT);
+    const honking = this.hornTime > 0;
+    this.residents.step(SIM_DT, {
+      player: p.pos, playerSpeed: Math.hypot(p.vel.x, p.vel.z), rider: b.rider,
+      dog, bike: b, sheep: this.flock.sheep, hour: this.hour, honking,
+    });
+    this.wildlife.step(SIM_DT, {
+      player: p.pos, gait: p.gait, dog, dogRunning: dog.running || dog.charging,
+      bike: b, bikeRunning: b.engineOn, honking, hour: this.hour,
+    });
     if (this.tick % GRASS_EVERY_TICKS === GRASS_EVERY_TICKS - 1) this.grass.grow(hours * GRASS_EVERY_TICKS);
     // Scattered sheep count as found once they are back with the flock.
     for (const s of this.flock.sheep) if (s.scattered && !s.isStray) s.scattered = false;
@@ -1648,6 +1758,7 @@ export class Sim {
   horn(): void {
     const b = this.bike;
     const bc = config.bike;
+    this.hornTime = 1.5;
     this.events.emit('bikeHorn', { x: b.x, z: b.z, tick: this.tick });
     this.flock.startle(b.x, b.z, bc.hornRadius, 15);
     this.wolves.scare(b.x, b.z, bc.hornRadius, bc.hornWolfMorale);

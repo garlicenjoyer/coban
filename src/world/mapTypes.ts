@@ -4,9 +4,26 @@
 // three.js, no Rapier.
 
 import type { HerbId, ShopId } from '../economy/economy';
+import type { Errand } from '../life/errands';
 import type { Terrain } from './terrain';
 
 export type V2 = { x: number; z: number };
+export type ResidentId = 'emre' | 'zeynep' | 'ayse' | 'hasan';
+
+export interface ValleyRoute {
+  resident: ResidentId;
+  /** Closed circuit. Stops appear in travel order, starting with the overnight stop. */
+  points: V2[];
+  stops: readonly ResidentStop[];
+}
+
+export interface ResidentStop {
+  hour: number;
+  point: number;
+  place: string;
+  activity: string;
+  pose?: 'sort' | 'sweep' | 'tea' | 'check';
+}
 
 // ---------- props (colliders + what the views draw) ----------
 
@@ -251,6 +268,8 @@ export interface MapDef {
   herbs?: { id: string; kind: HerbId; x: number; z: number }[];
   /** Uncle Ahmet's notes lying in the world (none on the test map). */
   notes?: AhmetNote[];
+  residents?: ValleyRoute[];
+  errands?: readonly Errand[];
   /** His pencil marks on the paper map. */
   pencil?: PencilMark[];
   /** Relative grass-tuft density, 0..1 (the valley thins it away from the homestead). */

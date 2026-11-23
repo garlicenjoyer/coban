@@ -3,7 +3,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
-import { config } from './core/config';
+import { config, SIM_DT } from './core/config';
 import { Input } from './core/input';
 import { FixedLoop } from './core/loop';
 import { canCheckpoint, SAVE_KEY, snapshot, usable } from './core/save';
@@ -13,6 +13,7 @@ import { Scenarios } from './debug/scenarios';
 import { Trial } from './debug/trial';
 import { GameAudio } from './audio/audio';
 import { Ambience } from './audio/ambience';
+import { ValleyLifeAudio } from './audio/valleyLifeAudio';
 import { commandInfo } from './dog/commands';
 import { DogView } from './dog/dogView';
 import { BikeView } from './bike/bikeView';
@@ -59,11 +60,15 @@ import { HerdingCues, herdingCueSettings } from './world/herdingCues';
 import { Coach } from './tutorial/coach';
 import { CoachView } from './ui/coachView';
 import { TitleScreen } from './ui/titleScreen';
+import { LifeView } from './life/lifeView';
+import { ErrandsView } from './life/errandsView';
 
 async function main() {
+  const params = new URLSearchParams(location.search);
+  const muted = params.has('mute');
   // The valley by default; ?map=test opens the greybox test map.
-  const mapId = new URLSearchParams(location.search).get('map') === 'test' ? 'test' : 'valley';
-  const [shepherd, sheepModel, dogModel, bikeModel, wolfModel, propModels, fieldProps, villageModels] = await Promise.all([
+  const mapId = params.get('map') === 'test' ? 'test' : 'valley';
+  const [shepherd, sheepModel, dogModel, bikeModel, wolfModel, propModels, fieldProps, villageModels, lifeModels] = await Promise.all([
     ShepherdRig.load(`${import.meta.env.BASE_URL}models/turkish-shepherd.glb`),
     loadGameModel('aegean-sheep'),
     loadGameModel('karabas'),
@@ -72,6 +77,7 @@ async function main() {
     loadGameModel('valley-props'),
     loadGameModel('field-props'),
     MAPS[mapId].layout.village ? loadGameModel('village') : null,
+    loadGameModel('valley-life'),
     RAPIER.init(),
   ]);
 
@@ -177,12 +183,17 @@ async function main() {
   scene.add(herding.root);
   const wolfView = new WolfView(() => sim.wolves, wolfModel, groundAt);
   scene.add(wolfView.root);
+  const lifeView = new LifeView(lifeModels, groundAt);
+  scene.add(lifeView.root);
+  const errandsView = new ErrandsView(sim.errands, sim.terrain, lifeModels);
+  scene.add(errandsView.root);
   const bikeView = new BikeView(() => sim.bike, bikeModel);
   scene.add(bikeView.root);
   const bikeDash = new BikeDash(() => sim, sim.events);
 
   // Sound: whistles from the shepherd, barks from where the dog is.
   const audio = new GameAudio();
+  const lifeAudio = new ValleyLifeAudio(audio);
   // The land's own sound: cicadas, crickets, the owl, sheep bells, the ezan from the village.
   const ambience = new Ambience(audio);
   sim.events.on('howl', (e) => audio.howl(e.x, sim.terrain.heightAt(e.x, e.z) + 2, e.z));
@@ -250,7 +261,7 @@ async function main() {
   // Esc / Start: the pause menu, with the controls and options.
   const pause = new PauseMenu({
     input,
-    cardOpen: () => !!title?.isOpen || paperMap.isOpen || shopView.isOpen || noteView.isOpen || satchel.cardOpen,
+    cardOpen: () => !!title?.isOpen || paperMap.isOpen || shopView.isOpen || noteView.isOpen || satchel.cardOpen || taskCard.isJournalOpen,
     when: () => {
       const h = ((sim.hour % 24) + 24) % 24;
       const clock = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
@@ -266,12 +277,17 @@ async function main() {
     setHints: (on) => (coach.enabled = on),
     resetHints: () => coach.reset(),
   });
+  if (muted) {
+    audio.setVolume(0);
+    music.volume = 0;
+  }
 
   // Views read the *current* sim objects through getters: reset rebuilds the world and player.
   const stations = { teaTable: house.teaTable, milkingStation: economyView.milkingStation, press: economyView.press };
   const playerView = new PlayerView(scene, sim, shepherd, bikeView, stations, fieldProps,
     (success) => atBike(success ? 'kick' : 'kickFail'));
   const rig = new CameraRig(RAPIER, () => sim.world, () => sim.player.collider, groundAt, canvas);
+  sim.events.on('lifeSound', (e) => lifeAudio.call(e.kind, e, rig.camera.position));
 
   // ---------- debug ----------
   const colliderLines = new THREE.LineSegments(
@@ -428,9 +444,12 @@ async function main() {
       }
 
       const cam = rig.camera;
+      lifeView.update(sim.residents, sim.wildlife, alpha, dt * loop.timeScale, cam.position, (sim.tick + alpha) * SIM_DT);
+      errandsView.update(sim.errands);
       const fwd = new THREE.Vector3();
       cam.getWorldDirection(fwd);
       audio.setListener(cam.position.x, cam.position.y, cam.position.z, fwd.x, fwd.y, fwd.z);
+      lifeAudio.update(sim.residents, cam.position, loop.timeScale === 0);
       const mi = layout.village?.minaret;
       ambience.update(dt, {
         hour: sim.hour,
@@ -446,7 +465,7 @@ async function main() {
       perf.lap('daylight');
       vegetation.update(cam.position);
       {
-        // Who is treading the grass down: the shepherd, the dog, the bike, the flock.
+        // Nearby bodies part the long grass as they pass.
         let n = 0;
         const add = (x: number, z: number, r: number) => {
           if (n < pushers.length) Object.assign(pushers[n++], { x, z, r });
@@ -454,6 +473,10 @@ async function main() {
         add(sim.player.pos.x, sim.player.pos.z, 0.75);
         add(sim.dog.x, sim.dog.z, 0.65);
         add(sim.bike.x, sim.bike.z, 1.1);
+        for (const resident of sim.residents.list) {
+          if (Math.hypot(resident.x - cam.position.x, resident.z - cam.position.z) < 48)
+            add(resident.x, resident.z, resident.tractor ? 1.2 : 0.52);
+        }
         for (const sh of sim.flock.sheep) add(sh.x, sh.z, 0.6);
         grass.update(cam, pushers.slice(0, n), terrainView.grassMap.value !== null);
       }
@@ -513,6 +536,11 @@ async function main() {
       if (canCheckpoint(sim)) writeSave('after a task', true);
     });
   });
+  sim.events.on('errandChanged', ({ title }) => {
+    queueMicrotask(() => {
+      if (canCheckpoint(sim, { afterDayTasks: true })) writeSave(title, true);
+    });
+  });
   const leaving = () => {
     if (canCheckpoint(sim) && sim.tick > 60 * 20) writeSave('on leaving', true);
   };
@@ -526,7 +554,7 @@ async function main() {
   saveFolder.add(saveCtl, 'status').name('save').listen().disable();
   saveFolder.close();
   let resumed: { day: number; clock: string } | null = null;
-  if (!new URLSearchParams(location.search).has('new')) {
+  if (!params.has('new')) {
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       const data = raw ? JSON.parse(raw) : null;
@@ -541,7 +569,7 @@ async function main() {
     }
   }
 
-  if (!new URLSearchParams(location.search).has('notitle')) {
+  if (!params.has('notitle')) {
     title = new TitleScreen({
       canvas,
       groundAt,
