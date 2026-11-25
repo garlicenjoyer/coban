@@ -4,10 +4,9 @@ import { config, SIM_DT } from '../src/core/config';
 import { EventBus } from '../src/core/events';
 import { emptyFrame } from '../src/core/input';
 import { snapshot } from '../src/core/save';
-import { voiceCues } from '../src/audio/residentVoiceCues';
-import { errandDirection } from '../src/life/dialogue';
 import { Errands } from '../src/life/errands';
 import { Resident, Residents } from '../src/life/residents';
+import { planResidentSpeech, speechMouth } from '../src/life/residentSpeech';
 import { Wildlife } from '../src/life/wildlife';
 import { Sim } from '../src/sim';
 import { useMap } from '../src/world/map';
@@ -29,28 +28,55 @@ afterAll(() => useMap(TEST_MAP));
 
 describe('valley life', () => {
   it('keeps each circuit clear and reaches every scheduled stop before the next one', () => {
+    const house = VALLEY_MAP.layout.house;
     for (const route of routes) {
       const resident = new Resident(route, terrain, obstacles);
       const road = resident.circuit;
       for (let s = 0; s < road.length; s += 0.25) {
         const p = road.at(s);
         expect(obstacles.blocked(p.x, p.z, resident.clearance), `${resident.id} at ${p.x.toFixed(1)},${p.z.toFixed(1)}`).toBe(false);
+        expect(Math.hypot(p.x - house.x, p.z - house.z), resident.id).toBeGreaterThan(36);
       }
       let time = 0;
       for (let i = 0; i < route.stops.length; i++) {
         const stop = route.stops[i];
         const beforeNext = (route.stops[i + 1]?.hour ?? 24) - 0.1;
+        const position = road.at(road.atStop(stop.point));
+        let reached = false;
         for (; time < beforeNext * config.time.secondsPerHour; time += 1 / 18) {
           resident.step(1 / 18, { ...quiet, hour: time / config.time.secondsPerHour });
+          if (resident.destination === stop && resident.settled) {
+            reached ||= Math.hypot(resident.x - position.x, resident.z - position.z) < 0.01 && resident.speed === 0;
+          }
         }
         expect(resident.destination, resident.id).toBe(stop);
-        expect(resident.settled, `${resident.id} at ${stop.place}`).toBe(true);
-        expect(resident.speed).toBe(0);
-        const position = road.at(road.atStop(stop.point));
-        expect(Math.hypot(resident.x - position.x, resident.z - position.z)).toBeLessThan(0.01);
+        expect(reached, `${resident.id} at ${stop.place}`).toBe(true);
       }
-      expect(resident.travel, resident.id).toBeCloseTo(road.length, 1);
+      if (resident.tractor) expect(resident.travel, resident.id).toBeCloseTo(road.length, 1);
+      else expect(resident.travel, resident.id).toBeGreaterThan(road.length + 30);
     }
+  });
+
+  it('takes a short walk between work cycles and resumes work at the same spot', () => {
+    const resident = new Resident(routes.find((route) => route.resident === 'ayse')!, terrain, obstacles);
+    const hour = 7.88;
+    resident.setTime(hour);
+    const station = { x: resident.x, z: resident.z };
+    const step = (seconds: number) => {
+      for (let i = 0; i < seconds / SIM_DT; i++) resident.step(SIM_DT, { ...quiet, hour });
+    };
+    step(25);
+    expect(resident.routine()).toContain('short walk');
+    expect(Math.hypot(resident.x - station.x, resident.z - station.z)).toBeGreaterThan(3);
+    expect(resident.workPose).toBeUndefined();
+    const walking = resident.travel;
+    resident.conversation = true;
+    step(5);
+    expect(resident.travel - walking).toBeLessThan(0.3);
+    resident.conversation = false;
+    step(18);
+    expect(resident.workPose).toBe('sort');
+    expect(Math.hypot(resident.x - station.x, resident.z - station.z)).toBeLessThan(0.01);
   });
 
   it('yields to traffic and resumes its route after a conversation ends', () => {
@@ -78,10 +104,22 @@ describe('valley life', () => {
     expect(tractor.speed).toBeGreaterThan(1);
   });
 
+  it('slows for a shepherd standing beside the road and continues after the brief stop', () => {
+    const tractor = new Resident(routes[0], terrain, obstacles);
+    for (let i = 0; i < 180; i++) tractor.step(SIM_DT, quiet);
+    const player = { x: tractor.x + Math.cos(tractor.yaw) * 3.1, y: tractor.y, z: tractor.z - Math.sin(tractor.yaw) * 3.1 };
+    expect(tractor.speed).toBeGreaterThan(1);
+    for (let i = 0; i < 66; i++) tractor.step(SIM_DT, { ...quiet, player });
+    expect(tractor.canTalk(player)).toBe(true);
+    const stoppedAt = tractor.travel;
+    for (let i = 0; i < 280; i++) tractor.step(SIM_DT, { ...quiet, player });
+    expect(tractor.travel - stoppedAt).toBeGreaterThan(3);
+  });
+
   it('sounds the daily work beats nearby and suspends them during a conversation', () => {
     const activities = [
       ['ayse', 8, ['oliveRustle', 'oliveDrop']], ['hasan', 11, ['broom', 'broom']],
-      ['emre', 8, ['tractorCheck']], ['zeynep', 8, ['churn']], ['ayse', 13, ['teaSip']],
+      ['emre', 7.8, ['tractorCheck']], ['zeynep', 8, ['churn']], ['ayse', 11, ['teaSip']],
     ] as const;
     for (const [id, hour, expected] of activities) {
       const events = new EventBus();
@@ -109,23 +147,17 @@ describe('valley life', () => {
     }
   });
 
-  it('has voice cues for every daily stop and optional errand response', () => {
-    for (const route of routes) {
-      const resident = new Resident(route, terrain, obstacles);
-      const cues = voiceCues[resident.id];
-      for (const stop of route.stops) {
-        resident.setTime(stop.hour);
-        for (const settled of [true, false]) {
-          resident.settled = settled;
-          expect(cues[resident.routine()]?.[1]).toBeGreaterThan(0);
-          expect(cues[resident.greeting({ hour: 8, flockExposed: false, gateOpen: false })]?.[1]).toBeGreaterThan(0);
-        }
-      }
-      const errand = VALLEY_MAP.errands!.find(({ resident: id }) => id === resident.id)!;
-      expect(cues[errand.offer]?.[1]).toBeGreaterThan(0);
-      expect(cues[errand.completedReply ?? errand.thanks]?.[1]).toBeGreaterThan(0);
-      expect(cues[errandDirection(errand.stops[0].place, true)]?.[1]).toBeGreaterThan(0);
-      for (const { place } of errand.stops) expect(cues[errandDirection(place)]?.[1]).toBeGreaterThan(0);
+  it('creates distinct speech rhythms and mouth cues from any dialogue text', () => {
+    const text = 'Günaydın, çoban. Would you help with the olives?';
+    const voices = routes.map(({ resident }) => planResidentSpeech(resident, text, 'greet'));
+    expect(new Set(voices.map((voice) => Math.round(voice.syllables[0].pitch))).size).toBe(4);
+    expect(new Set(voices.map((voice) => voice.duration)).size).toBe(4);
+    for (const voice of voices) {
+      expect(voice.syllables.length).toBeGreaterThan(10);
+      expect(voice.syllables.at(-1)?.bend).toBeGreaterThan(0);
+      const first = voice.syllables[0];
+      expect(speechMouth(voice, first.start + first.length * 0.5)).toBeGreaterThan(0.3);
+      expect(speechMouth(voice, voice.duration)).toBe(0.04);
     }
   });
 

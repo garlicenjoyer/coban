@@ -21,7 +21,8 @@ it('binds each pose to its own joints in the exported model catalogue', async ()
   const wildlife = new Wildlife(VALLEY_MAP, terrain, obstacles, events);
   const view = new LifeView(scene, (x, z) => terrain.heightAt(x, z));
   view.update(residents, wildlife, 1, SIM_DT, new Vector3(-360, 40, 290), 0);
-  expect(view.root.children.length).toBe(residents.list.length + wildlife.animals.length + 2);
+  const sortingStands = residents.list.flatMap((resident) => resident.stops).filter((stop) => stop.pose === 'sort').length;
+  expect(view.root.children.length).toBe(residents.list.length + wildlife.animals.length + sortingStands);
   expect(modelPart(view.root, 'Rust Tractor').visible).toBe(true);
   expect(modelPart(view.root, 'Blue Tractor').visible).toBe(false);
 
