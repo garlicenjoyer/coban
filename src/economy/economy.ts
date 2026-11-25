@@ -89,7 +89,7 @@ export const SHOPS: Record<ShopId, { name: string; keeper: string; greeting: str
   dairy: { name: 'the dairy', keeper: 'Fatma Hanım', greeting: 'Fresh milk only. What turns by evening, I can’t take.' },
   bakkal: { name: 'the bakkal', keeper: 'Hüseyin Efendi', greeting: 'Kibble, flour, oil. And I buy herbs, if they’re dry and clean.' },
   usta: { name: 'the mechanic', keeper: 'Usta Remzi', greeting: 'Your uncle’s old machine! I know every bolt of her.' },
-  kahvehane: { name: 'the kahvehane', keeper: 'Kemal', greeting: 'Sit, sit. Çay is coming.' },
+  kahvehane: { name: 'the kıraathane', keeper: 'Kemal', greeting: 'Sit, sit. Çay is coming.' },
   muze: { name: 'the museum', keeper: 'Selim Bey, the curator', greeting: 'Every piece tells me something about this valley. I pay what the ministry allows.' },
   vet: { name: 'the vet’s table', keeper: 'Dr. Aylin, the vet', greeting: 'Thursdays I’m here till evening. Who’s poorly?' },
   dealer: { name: 'the back room', keeper: 'a man who doesn’t give his name', greeting: 'Old things? I pay well. I don’t ask where.' },

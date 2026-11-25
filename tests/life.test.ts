@@ -13,6 +13,7 @@ import { useMap } from '../src/world/map';
 import { Obstacles } from '../src/world/obstacles';
 import { TEST_MAP } from '../src/world/testMap';
 import { VALLEY_MAP } from '../src/world/valley';
+import { COFFEEHOUSE, MOSQUE } from '../src/world/villagePlan';
 
 const terrain = VALLEY_MAP.buildTerrain();
 const obstacles = new Obstacles(VALLEY_MAP.buildProps(terrain));
@@ -55,6 +56,20 @@ describe('valley life', () => {
       if (resident.tractor) expect(resident.travel, resident.id).toBeCloseTo(road.length, 1);
       else expect(resident.travel, resident.id).toBeGreaterThan(road.length + 30);
     }
+  });
+
+  it('loads old village saves clear of the relocated buildings', () => {
+    const sim = new Sim(RAPIER, terrain);
+    const village = VALLEY_MAP.layout.village!;
+    const inside = ([dx, dz]: readonly number[]) => ({ x: village.x + dx, z: village.z + dz });
+    const save = snapshot(sim);
+    Object.assign(save.player, inside(COFFEEHOUSE));
+    Object.assign(save.bike, inside(MOSQUE));
+    sim.restore(save);
+    const player = sim.player.pos;
+    expect(sim.obstacles.blocked(player.x, player.z, config.player.capsuleRadius)).toBe(false);
+    expect(sim.obstacles.blocked(sim.bike.x, sim.bike.z, 1)).toBe(false);
+    expect(Math.hypot(player.x - save.player.x, player.z - save.player.z)).toBeLessThan(7);
   });
 
   it('takes a short walk between work cycles and resumes work at the same spot', () => {
@@ -180,6 +195,30 @@ describe('valley life', () => {
     life.step(SIM_DT, { ...ctx, hour: 22 });
     expect(hoopoe.visible).toBe(false);
     expect(life.animals.some((a) => a.species === 'fox' && a.visible)).toBe(true);
+  });
+
+  it('lets village cats finish their circuits and nap, with a quiet approach leaving them asleep', () => {
+    const life = new Wildlife(VALLEY_MAP, terrain, obstacles, new EventBus());
+    const cats = life.animals.filter((animal) => animal.species === 'cat');
+    expect(cats.map((cat) => cat.coat)).toEqual(['ginger', 'calico', 'grey']);
+    const ginger = cats[0];
+    const player = { x: ginger.x - 1.1, y: ginger.y, z: ginger.z };
+    const ctx = { player, gait: 'sneak' as const, bike: distant, bikeRunning: false, dog: distant, dogRunning: false, honking: false, hour: 13 };
+    life.step(SIM_DT, ctx);
+    expect(ginger.state).toBe('sleep');
+    life.step(SIM_DT, { ...ctx, gait: 'sprint' });
+    expect(ginger.state).toBe('alert');
+
+    const returned = new Set();
+    for (let time = 0; time < 125; time += 0.1) {
+      for (const cat of cats) {
+        cat.step(0.1, { ...ctx, player: distant });
+        expect(obstacles.blocked(cat.x, cat.z, 0.40), cat.coat).toBe(false);
+        if (cat.state === 'sleep' && cat.travel > 5) returned.add(cat.coat);
+      }
+    }
+    expect([...returned].sort()).toEqual(['calico', 'ginger', 'grey']);
+    expect(new Wildlife(TEST_MAP, TEST_MAP.buildTerrain(), obstacles, new EventBus()).animals.some((cat) => cat.coat)).toBe(false);
   });
 
   it('leaves the gate interaction available even when a villager stands in reach', () => {

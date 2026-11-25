@@ -890,18 +890,28 @@ export class Sim {
     this.errands.load(d.errands);
     this.finds = ((d.economy.extra?.finds as typeof this.finds | undefined) ?? []).map((f) => ({ ...f, id: this.findSeq++ }));
 
+    // A saved position can overlap a building or fixture added to the village since the save.
+    const village = layout.village;
+    const clearVillageSpot = (point: { x: number; z: number }, radius: number) => {
+      if (!village || Math.hypot(point.x - village.x, point.z - village.z) > 80
+        || !this.obstacles.blocked(point.x, point.z, radius)) return point;
+      return this.obstacles.pushOut(point.x, point.z, radius + 0.06);
+    };
+
     const dog = this.dog;
-    dog.x = dog.px = dog.tx = d.dog.x;
-    dog.z = dog.pz = dog.tz = d.dog.z;
-    dog.y = dog.py = this.terrain.heightAt(d.dog.x, d.dog.z);
+    const dogSpot = clearVillageSpot(d.dog, config.dog.radius);
+    dog.x = dog.px = dog.tx = dogSpot.x;
+    dog.z = dog.pz = dog.tz = dogSpot.z;
+    dog.y = dog.py = this.terrain.heightAt(dog.x, dog.z);
     dog.bond = d.dog.bond;
     dog.wound = d.dog.wound;
     Object.assign(dog.care, { satiety: d.dog.satiety, hydration: d.dog.hydration, ticks: d.dog.ticks, sack: d.dog.sack });
     dog.care.bowl.meals = d.dog.bowl;
 
     const b = this.bike;
-    b.x = b.px = d.bike.x;
-    b.z = b.pz = d.bike.z;
+    const bikeSpot = clearVillageSpot(d.bike, 1);
+    b.x = b.px = bikeSpot.x;
+    b.z = b.pz = bikeSpot.z;
     b.heading = b.prevHeading = d.bike.heading;
     b.waterCans = d.bike.waterCans;
     Object.assign(b.care, {
@@ -922,9 +932,10 @@ export class Sim {
     this.flock.remove(this.flock.sheep.filter((s) => !saved.has(s.id)));
     for (const s of this.flock.sheep) {
       const v = saved.get(s.id)!;
-      s.x = s.px = v.x;
-      s.z = s.pz = v.z;
-      s.y = s.py = this.terrain.heightAt(v.x, v.z);
+      const spot = clearVillageSpot(v, config.flock.radius);
+      s.x = s.px = spot.x;
+      s.z = s.pz = spot.z;
+      s.y = s.py = this.terrain.heightAt(s.x, s.z);
       s.heading = s.prevHeading = v.heading;
       s.personality = v.personality;
       s.isLeader = v.isLeader;
@@ -933,7 +944,7 @@ export class Sim {
       s.condition = v.condition;
       s.scattered = v.scattered;
       s.shorn = e.shornIds.has(s.id);
-      s.inPen = insidePen(v.x, v.z);
+      s.inPen = insidePen(s.x, s.z);
       s.vx = s.vz = 0;
     }
     const leader = this.flock.sheep.find((s) => s.isLeader);
@@ -970,7 +981,8 @@ export class Sim {
       this.satchel.slots = d.satchel.map((s) => ({ id: s.id, uses: s.uses < 0 ? Infinity : s.uses }));
     }
     this.residents.setTime(this.hour);
-    this.teleport(d.player.x, d.player.z);
+    const spot = clearVillageSpot(d.player, config.player.capsuleRadius);
+    this.teleport(spot.x, spot.z);
     this.events.emit('loaded', { day: d.day, hour: d.midday ? this.hour : undefined });
   }
 

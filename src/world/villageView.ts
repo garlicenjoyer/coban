@@ -2,12 +2,12 @@ import * as THREE from 'three';
 import { isThursday } from '../economy/calendar';
 import type { ShopId } from '../economy/economy';
 import { modelMesh, modelPart } from '../render/gameModel';
-import { toonMaterial } from '../render/toon';
+import { toonMaterial, toonRamp } from '../render/toon';
 import type { BoxProp, Layout, MapProps } from './mapTypes';
 import type { Terrain } from './terrain';
 import type { ValleyProps } from './valleyProps';
 import { villagePaving } from './villageGround';
-import { COFFEEHOUSE, MOSQUE, SQUARE_TREE } from './villagePlan';
+import { CAFE, COFFEEHOUSE, MEMORIAL, MOSQUE, SQUARE_TREE } from './villagePlan';
 
 type Village = NonNullable<Layout['village']>;
 type SignedShop = Exclude<ShopId, 'dealer' | 'vet'>;
@@ -16,7 +16,7 @@ const signs: Record<SignedShop, [text: string, bg: string, fg: string]> = {
   dairy: ['SÜT VE PEYNİR', '#456568', '#eccfaa'],
   bakkal: ['BAKKAL', '#834f43', '#ebd4a7'],
   usta: ['OTO TAMİR', '#4d5a52', '#e5c89a'],
-  kahvehane: ['KAHVEHANE', '#536957', '#edd6ac'],
+  kahvehane: ['KIRAATHANE', '#536957', '#edd6ac'],
   muze: ['MÜZE', '#80634c', '#efdcaf'],
 };
 
@@ -85,8 +85,35 @@ function makeSign(id: SignedShop): THREE.Group {
   return g;
 }
 
+function memorialInscription(): THREE.Mesh {
+  const canvas = document.createElement('canvas');
+  canvas.width = 768;
+  canvas.height = 384;
+  const ctx = canvas.getContext('2d')!;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = '#706253';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(18, 18, 732, 348);
+  for (const [label, size, y] of [['MUSTAFA KEMAL', 47, 106], ['ATATÜRK', 102, 198], ['1881–1938', 46, 302]] as const) {
+    ctx.font = `bold ${size}px Georgia, serif`;
+    ctx.fillStyle = '#e0d4bc';
+    ctx.fillText(label, 384, y + 2);
+    ctx.fillStyle = '#3d352a';
+    ctx.fillText(label, 384, y);
+  }
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const lettering = new THREE.Mesh(new THREE.PlaneGeometry(1.03, 0.515),
+    toonMaterial({ map, color: 0xe1d8c7, transparent: true, depthWrite: false }));
+  lettering.name = 'Mustafa Kemal Atatürk · 1881–1938';
+  lettering.position.set(0, 0.86, 0.482);
+  lettering.receiveShadow = true;
+  return lettering;
+}
+
 const terraceRuns = [
-  [[-39, 23], [-39, 10]], [[-39, 10], [-28, 10]], [[-18, 24], [-9, 24]],
+  [[-44, 16], [-34, 16]], [[-14.5, 40.1], [0, 40.1]],
   [[8, 22], [16, 22]], [[16, 22], [16, 13]], [[26, 32], [38, 32]],
   [[-35, -31], [-31, -31]], [[-15, -30], [-9, -30]], [[6, -33], [17, -33]],
   [[20, -29], [29, -29]], [[40, -46], [31, -46]], [[47, -30], [49, -25]],
@@ -114,7 +141,7 @@ export class VillageView {
       if (p.kind === 'box' && p.role === 'building') {
         const dx = p.x - plan.x, dz = p.z - plan.z;
         if (dx === COFFEEHOUSE[0] && dz === COFFEEHOUSE[1]) {
-          this.place('Coffeehouse', dx, dz, Math.PI);
+          this.place('Coffeehouse', dx, dz, CAFE.facing).scale.set(p.hz / 6, p.hy / 1.8, p.hx / 4);
         } else if (dx === MOSQUE[0] && dz === MOSQUE[1]) {
           this.place('Village mosque', dx, dz, Math.PI / 2);
         } else {
@@ -185,11 +212,6 @@ export class VillageView {
     stand.add(makeSign(s.id));
     if (s.id === 'kahvehane') {
       this.props.place(stand, 'Cafe tea counter', 0, 1.001, -1.02);
-      for (const [x, z, angle] of [[-2.69, 1.70, -0.24], [2.69, 1.7, 0.35], [-2.71, -0.24, 0.60], [2.75, -0.34, -0.74]]) {
-        this.props.place(stand, 'Cafe tea table', x, 0, z, angle);
-        this.props.place(stand, 'Wooden stool', x - 0.62, 0, z + 0.14, 0.49);
-        this.props.place(stand, 'Wooden stool', x + 0.55, 0, z - 0.15, -0.66);
-      }
       for (const x of [-3.86, 3.86]) {
         const pot = modelPart(this.library, 'Geranium pot').clone();
         pot.position.set(x, 0, 2.03);
@@ -204,13 +226,22 @@ export class VillageView {
   }
 
   private square(): void {
+    const { x, z, facing } = MEMORIAL;
+    const memorial = this.place('Atatürk memorial', x, z, facing);
+    const bust = modelMesh(memorial, 'Atatürk carved bust');
+    // Soft light keeps the shallow carving around the eyes and mouth visible.
+    const gradientMap = toonRamp().clone();
+    gradientMap.minFilter = gradientMap.magFilter = THREE.LinearFilter;
+    gradientMap.needsUpdate = true;
+    bust.material = toonMaterial({ vertexColors: true, gradientMap });
+    memorial.add(memorialInscription());
     for (const [x, z, facing] of [[-10.6, -9.1, 0.12], [-13.9, -6.38, Math.PI / 2], [7.74, -6.84, -0.70],
-      [9.22, 9.6, Math.PI], [-6.65, 11.2, Math.PI], [-36.8, 34.08, 0.30], [33.94, -19.6, 0.52]]) {
+      [9.22, 9.6, Math.PI], [-6.65, 11.2, Math.PI], [-34.7, 15.4, 0.30], [33.94, -19.6, 0.52]]) {
       this.place('Stone and timber bench', x, z, facing);
     }
     this.lanternFinish = toonMaterial({ vertexColors: true, emissive: 0xf0aa58, emissiveIntensity: 0.08 });
     for (const [x, z, turn, shines] of [[-19.8, 6.9, 0.42, true], [13.7, 8.5, Math.PI, true], [7.2, -8.2, -0.87, true],
-      [-22.9, 31.1, Math.PI * 0.50, false], [-35.1, 34.3, 0.08, false], [-8.6, -17.1, 0.82, false],
+      [-13.7, 38.6, Math.PI * 0.50, true], [-33.2, 13.7, 0.08, false], [-8.6, -17.1, 0.82, false],
       [29.1, -14.4, 0.94, false], [42.2, -19.4, 0.46, false], [-17.8, -3.1, 1.35, false]] as const) {
       const lamp = this.place('Street lamp', x, z, turn);
       const glass = modelMesh(lamp, 'Lantern panes');
@@ -224,7 +255,7 @@ export class VillageView {
       this.lights.push(light);
     }
     for (const [x, z, size] of [[5.8, -7.8, 0.77], [8.03, -4.74, 0.81], [-10.85, -10.2, 0.84],
-      [-33.8, 34.2, 0.90], [-35.8, 34.9, 0.59], [12.7, -11.0, 0.94], [-14.4, 8.5, 0.73], [25.6, 22.0, 0.95]]) {
+      [-33.6, 14.85, 0.90], [-33.6, 3.25, 0.59], [12.7, -11.0, 0.94], [-14.4, 8.5, 0.73], [25.6, 22.0, 0.95]]) {
       this.place('Geranium pot', x, z, (x + z) * 0.58).scale.setScalar(size);
     }
   }

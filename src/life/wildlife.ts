@@ -4,17 +4,19 @@ import type { MapDef, V2 } from '../world/mapTypes';
 import { rng } from '../world/noise';
 import type { Obstacles } from '../world/obstacles';
 import { Surface, type Terrain } from '../world/terrain';
+import { VILLAGE_CATS, type CatCoat } from '../world/villagePlan';
 import type { Gait } from '../player/controller';
 import { angleDelta } from './residents';
 
-export type Species = 'swallow' | 'hoopoe' | 'hare' | 'fox';
-type State = 'forage' | 'alert' | 'flee' | 'flight' | 'land';
+export type Species = 'swallow' | 'hoopoe' | 'hare' | 'fox' | 'cat';
+type State = 'forage' | 'alert' | 'flee' | 'flight' | 'land' | 'sleep';
 
 export const wildlifeNames: Record<Species, string> = {
   swallow: 'Barn swallow',
   hoopoe: 'Hoopoe',
   hare: 'Brown hare',
   fox: 'Red fox',
+  cat: 'Village cat',
 };
 
 interface Context {
@@ -28,11 +30,19 @@ interface Context {
   hour: number;
 }
 
-interface Habitat {
-  species: Species;
+interface WildHabitat {
+  species: Exclude<Species, 'cat'>;
   home: V2;
   radius: number;
   phase?: number;
+}
+
+interface CatHabitat {
+  species: 'cat';
+  coat: CatCoat;
+  route: readonly V2[];
+  start: number;
+  yaw: number;
 }
 
 const TAU = Math.PI * 2;
@@ -41,6 +51,7 @@ const range = (a: V2, b: V2) => Math.hypot(a.x - b.x, a.z - b.z);
 export class Animal {
   readonly species: Species;
   readonly home: V2;
+  readonly coat?: CatCoat;
   x: number;
   y: number;
   z: number;
@@ -62,21 +73,30 @@ export class Animal {
   private callIn: number;
   private phase: number;
   private readonly rand: () => number;
+  private readonly circuit?: readonly V2[];
+  private next = 0;
 
-  constructor(habitat: Habitat, seed: number, private terrain: Terrain,
+  constructor(habitat: WildHabitat | CatHabitat, seed: number, private terrain: Terrain,
     private clear: (x: number, z: number) => boolean, private events: EventBus) {
     this.rand = rng(seed);
     this.species = habitat.species;
-    this.home = habitat.home;
-    this.phase = habitat.phase ?? this.rand() * TAU;
-    this.radius = habitat.radius;
-    this.target = this.home;
+    const cat = habitat.species === 'cat' ? habitat : undefined;
+    const wild = habitat.species !== 'cat' ? habitat : undefined;
+    this.home = habitat.species === 'cat' ? habitat.route[0] : habitat.home;
+    this.coat = cat?.coat;
+    this.circuit = cat?.route;
+    this.phase = wild?.phase ?? this.rand() * TAU;
+    this.radius = wild?.radius ?? 0;
+    const start = cat ? cat.route[cat.start] : this.home;
+    this.next = cat ? (cat.start + 1) % cat.route.length : 0;
+    this.target = cat ? cat.route[this.next] : this.home;
     this.callIn = 2 + this.rand() * 4;
-    this.state = this.species === 'swallow' ? 'flight' : 'forage';
+    this.state = cat?.start === 0 ? 'sleep' : this.species === 'swallow' ? 'flight' : 'forage';
+    if (this.state === 'sleep') this.change = 20 + this.rand() * 19;
     this.visible = this.species !== 'fox';
-    this.x = this.px = this.home.x;
-    this.z = this.pz = this.home.z;
-    this.yaw = this.previousYaw = this.rand() * TAU;
+    this.x = this.px = start.x;
+    this.z = this.pz = start.z;
+    this.yaw = this.previousYaw = cat?.yaw ?? this.rand() * TAU;
     if (this.species === 'swallow') this.circle(0);
     this.y = this.py = this.terrain.heightAt(this.x, this.z) + this.air;
     this.px = this.x;
@@ -92,13 +112,17 @@ export class Animal {
 
   observe(player: Vec3Like): boolean {
     const d = range(this, player);
-    return this.visible && d < (this.species === 'fox' ? 18 : this.airborne ? 20 : 11)
+    return this.visible && d < (this.species === 'cat' ? 4 : this.species === 'fox' ? 18 : this.airborne ? 20 : 11)
       && Math.abs(this.y - player.y) < (this.airborne ? 13 : 3.2)
       && (this.airborne || [0.25, 0.5, 0.75].every((t) =>
         this.clear(this.x + (player.x - this.x) * t, this.z + (player.z - this.z) * t)));
   }
 
   describe(): string {
+    if (this.species === 'cat') {
+      return this.state === 'sleep' ? 'It sleeps with its paws tucked in and its tail curled close.'
+        : 'It picks its way across the stones with its tail held high.';
+    }
     if (this.state === 'flee') return this.species === 'hare' ? 'It bounds away in long leaps.' : 'It slips away low through the scrub.';
     if (this.species === 'swallow') return 'It banks after insects, then glides on swept wings.';
     if (this.species === 'hoopoe') {
@@ -229,14 +253,47 @@ export class Animal {
     this.change -= dt;
   }
 
+  private villageCat(dt: number, ctx: Context, circuit: readonly V2[]): void {
+    const startled = (ctx.gait === 'sprint' && range(this, ctx.player) < 2.6)
+      || (ctx.dogRunning && range(this, ctx.dog) < 3.8)
+      || (ctx.bikeRunning && range(this, ctx.bike) < (ctx.honking ? 10 : 4.2));
+    this.change = Math.max(0, this.change - dt);
+    this.speed = 0;
+    if (this.state === 'sleep' && (this.change === 0 || startled)) {
+      this.state = 'alert';
+      this.change = startled ? 0.32 : 1.1;
+    }
+    if (this.change > 0) return;
+
+    const left = range(this, this.target);
+    if (left < 0.035) {
+      const napping = this.next === 0 && !startled;
+      this.next = (this.next + 1) % circuit.length;
+      this.target = circuit[this.next];
+      this.state = napping ? 'sleep' : 'alert';
+      this.change = napping ? (ctx.hour >= 11 && ctx.hour < 16 ? 31 : 19) + this.rand() * 14 : 0.3 + this.rand() * 1.2;
+      return;
+    }
+    const pace = startled ? 1.65 : this.coat === 'calico' ? 0.82 : 0.68;
+    this.state = 'forage';
+    this.go(dt, Math.min(pace, 0.34 + left * 2));
+  }
+
   step(dt: number, ctx: Context): void {
-    this.visible = this.species === 'fox' ? ctx.hour < 7.5 || ctx.hour > 17.5 : ctx.hour >= DAWN_HOUR && ctx.hour < SUNSET_HOUR + 0.6;
+    this.visible = this.species === 'cat' || (this.species === 'fox'
+      ? ctx.hour < 7.5 || ctx.hour > 17.5
+      : ctx.hour >= DAWN_HOUR && ctx.hour < SUNSET_HOUR + 0.6);
     if (!this.visible) return;
     this.px = this.x;
     this.py = this.y;
     this.pz = this.z;
     this.previousYaw = this.yaw;
     this.age += dt;
+    if (this.circuit) {
+      this.villageCat(dt, ctx, this.circuit);
+      this.y = this.terrain.heightAt(this.x, this.z);
+      return;
+    }
     this.callIn -= dt;
     const d = range(this, ctx.player);
     const alertDistance = this.species === 'fox' ? 19 : 13;
@@ -250,7 +307,7 @@ export class Animal {
 
     if (this.callIn <= 0) {
       this.callIn = this.species === 'fox' ? 38 + this.rand() * 40 : 8 + this.rand() * 15;
-      if (this.species !== 'hare' && this.state !== 'flee' && this.state !== 'alert') this.sound(this.species, ctx);
+      if (this.species !== 'hare' && this.species !== 'cat' && this.state !== 'flee' && this.state !== 'alert') this.sound(this.species, ctx);
     }
   }
 }
@@ -269,13 +326,13 @@ export class Wildlife {
       const surface = terrain.surfaceAt(x, z);
       return surface !== Surface.Mud;
     };
-    const habitats: Habitat[] = [];
+    const habitats: WildHabitat[] = [];
     for (const center of [ { x: spawn.x + 4, z: spawn.z - 16 }, springs[0], springs[1], village ?? hill ]) {
       for (let i = 0; i < 4; i++) {
         habitats.push({ species: 'swallow', home: center, radius: 21 + i * 0.75, phase: i * 0.30 + rand() * 0.11 });
       }
     }
-    const groundHome = (species: Species, center: V2, radius: number) => {
+    const groundHome = (species: WildHabitat['species'], center: V2, radius: number) => {
       for (let i = 0; i < 40; i++) {
         const a = rand() * TAU;
         const r = 4 + rand() * radius;
@@ -289,6 +346,12 @@ export class Wildlife {
     for (const center of [spawn, ...pastures, ruins, hill]) groundHome('hare', center, 19);
     for (const center of [house, pastures[1], ruins, hill]) groundHome('fox', center, 21);
     this.animals = habitats.map((h, i) => new Animal(h, 3127 + i * 731, terrain, clear, events));
+    if (village) {
+      for (const [i, cat] of VILLAGE_CATS.entries()) {
+        const route = cat.route.map(([x, z]) => ({ x: village.x + x, z: village.z + z }));
+        this.animals.push(new Animal({ ...cat, species: 'cat', route }, 16381 + i * 647, terrain, clear, events));
+      }
+    }
   }
 
   step(dt: number, ctx: Context): void {

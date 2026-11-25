@@ -6,9 +6,14 @@ import { angleDelta, type Resident, type Residents } from './residents';
 import type { Animal, Species, Wildlife } from './wildlife';
 import { residentFace, residentGesture, residentWork, type GesturePose } from './residentAnimation';
 import { speechMouth } from './residentSpeech';
+import { jointsOf, reachLimb } from './residentRig';
+import { CatPose } from './catPose';
+import type { Layout } from '../world/mapTypes';
+import { pavingDistance, type CatCoat } from '../world/villagePlan';
 
 const { lerp, clamp } = THREE.MathUtils;
-const speciesModels: Record<Species, string> = { swallow: 'Swallow', hoopoe: 'Hoopoe', hare: 'Hare', fox: 'Fox' };
+const speciesModels: Record<Exclude<Species, 'cat'>, string> = { swallow: 'Swallow', hoopoe: 'Hoopoe', hare: 'Hare', fox: 'Fox' };
+const catModels: Record<CatCoat, string> = { ginger: 'Village Cat Ginger', calico: 'Village Cat Calico', grey: 'Village Cat Grey' };
 const sides = ['Left', 'Right'];
 
 interface Moving {
@@ -20,19 +25,6 @@ interface Moving {
 function place(root: THREE.Object3D, m: Moving, alpha: number): void {
   root.position.set(lerp(m.px, m.x, alpha), lerp(m.py, m.y, alpha), lerp(m.pz, m.z, alpha));
   root.rotation.y = m.previousYaw + angleDelta(m.previousYaw, m.yaw) * alpha;
-}
-
-function jointsOf(root: THREE.Object3D): (name: string) => THREE.Object3D {
-  const joints = new Map<string, THREE.Object3D>();
-  // A catalogue can repeat joint names. GLTFLoader preserves the authored name in userData.
-  root.traverse((node) => {
-    if (typeof node.userData.name === 'string') joints.set(node.userData.name, node);
-  });
-  return (name) => {
-    const joint = joints.get(name);
-    if (!joint) throw new Error(`${root.name}: missing joint "${name}"`);
-    return joint;
-  };
 }
 
 class ResidentPose {
@@ -152,7 +144,7 @@ class ResidentPose {
       this.plantFeet(r.speed, dt);
       if (this.tools?.broom.visible) {
         const handle = this.tools.broom.localToWorld(new THREE.Vector3(0, 0.17, 0));
-        this.reach(this.arms[0], this.elbows[0], this.hands[0], handle, new THREE.Vector3(-0.4, -1, 0).transformDirection(this.root.matrixWorld));
+        reachLimb(this.arms[0], this.elbows[0], this.hands[0], handle, new THREE.Vector3(-0.4, -1, 0).transformDirection(this.root.matrixWorld));
       }
     }
   }
@@ -180,7 +172,7 @@ class ResidentPose {
     footwork.advance(frame, dt, speed, 0, 0, true, this.groundAt);
     const orientation = this.root.getWorldQuaternion(new THREE.Quaternion());
     for (const [i, step] of footwork.feet.entries()) {
-      this.reach(this.legs[i], this.knees[i], this.feet[i],
+      reachLimb(this.legs[i], this.knees[i], this.feet[i],
         step.target.clone().applyMatrix4(frame), new THREE.Vector3(i === 0 ? -0.12 : 0.12, 0, 1).transformDirection(frame));
       const foot = this.feet[i];
       const pitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), step.pitch);
@@ -193,7 +185,7 @@ class ResidentPose {
     for (const [i, foot] of this.feet.entries()) {
       const side = i === 0 ? -1 : 1;
       const pedal = this.root.localToWorld(new THREE.Vector3(side * 0.225, 0.766, -0.225));
-      this.reach(this.legs[i], this.knees[i], foot, pedal,
+      reachLimb(this.legs[i], this.knees[i], foot, pedal,
         new THREE.Vector3(side * 0.30, 0.14, 1).transformDirection(this.root.matrixWorld));
       foot.quaternion.copy(foot.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(orientation);
     }
@@ -203,31 +195,11 @@ class ResidentPose {
       const side = i === 0 ? -1 : 1;
       const grip = this.steering!.localToWorld(new THREE.Vector3(side * 0.153, -0.047, -0.040));
       grip.lerp(hand.getWorldPosition(new THREE.Vector3()), 1 - weight);
-      this.reach(this.arms[i], this.elbows[i], hand, grip,
+      reachLimb(this.arms[i], this.elbows[i], hand, grip,
         new THREE.Vector3(side * 0.62, -1, -0.12).transformDirection(this.root.matrixWorld));
     }
   }
 
-  /** Solve around the anatomical knee or elbow bend while keeping the hand or foot on target. */
-  private reach(upper: THREE.Object3D, mid: THREE.Object3D, end: THREE.Object3D, target: THREE.Vector3, pole: THREE.Vector3): void {
-    const origin = upper.getWorldPosition(new THREE.Vector3());
-    const joint = mid.getWorldPosition(new THREE.Vector3());
-    const tip = end.getWorldPosition(new THREE.Vector3());
-    const a = origin.distanceTo(joint), b = joint.distanceTo(tip);
-    const dir = target.sub(origin);
-    const distance = clamp(dir.length(), Math.abs(a - b) + 0.001, a + b - 0.001);
-    dir.normalize();
-    const along = (a * a - b * b + distance * distance) / (2 * distance);
-    pole.addScaledVector(dir, -pole.dot(dir)).normalize();
-    const bend = origin.clone().addScaledVector(dir, along).addScaledVector(pole, Math.sqrt(Math.max(0, a * a - along * along)));
-    const reachable = origin.addScaledVector(dir, distance);
-    const aim = (bone: THREE.Object3D, child: THREE.Object3D, world: THREE.Vector3) => {
-      const direction = bone.parent!.worldToLocal(world).sub(bone.position).normalize();
-      bone.quaternion.setFromUnitVectors(child.position.clone().normalize(), direction);
-    };
-    aim(upper, mid, bend);
-    aim(mid, end, reachable);
-  }
 }
 
 class AnimalPose {
@@ -313,11 +285,14 @@ class AnimalPose {
 export class LifeView {
   readonly root = new THREE.Group();
   private residents: ResidentPose[] = [];
-  private animals: AnimalPose[] = [];
+  private animals: (AnimalPose | CatPose)[] = [];
   private world?: Wildlife;
+  private readonly catGroundAt: (x: number, z: number) => number;
 
-  constructor(private models: THREE.Group, private groundAt: (x: number, z: number) => number) {
+  constructor(private models: THREE.Group, private groundAt: (x: number, z: number) => number, village?: Layout['village']) {
     this.root.name = 'Valley residents and wildlife';
+    this.catGroundAt = village ? (x, z) => groundAt(x, z)
+      + 0.048 * (1 - THREE.MathUtils.smoothstep(pavingDistance(x - village.x, z - village.z), -0.33, 0.16)) : groundAt;
   }
 
   update(residents: Residents, wildlife: Wildlife, alpha: number, dt: number, camera: THREE.Vector3, time: number): void {
@@ -325,7 +300,9 @@ export class LifeView {
       this.world = wildlife;
       this.root.clear();
       this.residents = residents.list.map((resident) => new ResidentPose(resident, this.models, this.groundAt));
-      this.animals = wildlife.animals.map((animal) => new AnimalPose(modelPart(this.models, speciesModels[animal.species]), animal.species));
+      this.animals = wildlife.animals.map((animal) => animal.species === 'cat'
+        ? new CatPose(modelPart(this.models, catModels[animal.coat ?? 'ginger']), this.catGroundAt)
+        : new AnimalPose(modelPart(this.models, speciesModels[animal.species]), animal.species));
       this.root.add(...this.residents.map((pose) => pose.root), ...this.animals.map((pose) => pose.root));
       for (const resident of residents.list) {
         for (const { x, z, yaw } of resident.sortingStands.values()) {

@@ -17,7 +17,7 @@ import { createPhysicsWorld } from '../src/world/physics';
 import { Surface } from '../src/world/terrain';
 import { TEST_MAP } from '../src/world/testMap';
 import { dereDistance, hillRoadDistance, mainRoadDistance, VALLEY_MAP, valleyLayout as L } from '../src/world/valley';
-import { onVillagePaving } from '../src/world/villagePlan';
+import { MEMORIAL, onVillagePaving } from '../src/world/villagePlan';
 import { initRapier, yawToward } from './helpers';
 
 const terrain = VALLEY_MAP.buildTerrain();
@@ -142,13 +142,24 @@ describe('valley layout', () => {
 
   it('paves the approach and market entrances, with room to reach each counter', () => {
     const v = L.village;
-    for (const [dx, dz] of [[-24, 34], [-17, 24], [-9, 13], [-5, 7], [0, 0]]) {
+    for (const [dx, dz] of [[-24, 34], [-17, 24], [-9, 13], [-5, 7], [-3, 0], [3, 0]]) {
       expect(onVillagePaving(v, v.x + dx, v.z + dz)).toBe(true);
       expect(obstacles.blocked(v.x + dx, v.z + dz, 0.4)).toBe(false);
     }
     for (const shop of v.shops ?? []) {
       if (shop.id !== 'dealer') expect(onVillagePaving(v, shop.x, shop.z)).toBe(true);
       expect(obstacles.blocked(shop.x, shop.z, 0.35)).toBe(false);
+    }
+  });
+
+  it('keeps the memorial solid at the plaza center with room to walk around it', () => {
+    const { x, z } = L.village;
+    expect(onVillagePaving(L.village, x, z)).toBe(true);
+    expect(obstacles.blocked(x, z, config.player.capsuleRadius)).toBe(true);
+    for (let i = 0; i < 8; i++) {
+      const angle = i * Math.PI / 4;
+      const r = MEMORIAL.radius + 1;
+      expect(obstacles.blocked(x + Math.cos(angle) * r, z + Math.sin(angle) * r, 0.4)).toBe(false);
     }
   });
 

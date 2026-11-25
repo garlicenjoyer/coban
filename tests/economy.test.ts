@@ -40,11 +40,15 @@ function bikeTo(sim: Sim, x: number, z: number) {
 }
 
 describe('the village and the hills', () => {
-  it('has seven counters round the square (the dealer round the back, the vet on Thursdays) and nine herb patches, all where you can stand', () => {
+  it('has seven village counters and nine herb patches, all where you can stand', () => {
     expect(L.village.shops!.map((s) => s.id)).toEqual(['dairy', 'bakkal', 'usta', 'kahvehane', 'muze', 'dealer', 'vet']);
     for (const s of L.village.shops!) {
       expect(obstacles.blocked(s.x, s.z, 0.5), s.id).toBe(false);
-      expect(Math.hypot(s.x - L.village.x, s.z - L.village.z), s.id).toBeLessThan(30);
+      if (s.id === 'kahvehane') {
+        expect(s.z - L.village.z).toBeGreaterThan(25);
+        expect(s.z - L.village.z).toBeLessThan(40);
+        expect(mainRoadDistance(s.x, s.z)).toBeLessThan(12);
+      } else expect(Math.hypot(s.x - L.village.x, s.z - L.village.z), s.id).toBeLessThan(30);
     }
     const herbs = VALLEY_MAP.herbs!;
     expect(herbs.length).toBe(9);
