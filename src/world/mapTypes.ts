@@ -49,6 +49,7 @@ export type PropRole =
   | 'minaret'
   | 'villageTree'
   | 'villageFountain'
+  | 'villageFixture'
   /** One of Uncle Ahmet's old cairns on the routes he walked. */
   | 'cairn'
   /** The broken walls of Uncle Ahmet's fallen hut (drawn by the works view). */

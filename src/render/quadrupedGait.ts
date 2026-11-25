@@ -68,12 +68,13 @@ export class QuadrupedGait {
     private readonly body: THREE.Object3D,
     private readonly groundAt: (x: number, z: number) => number,
     private readonly strideScale = 1,
+    jointOf = (name: string) => modelPart(root, name),
   ) {
     this.bodyOrigin = body.position.clone();
     this.legs = Array.from({ length: 4 }, (_, i) => {
-      const upper = modelPart(root, `Leg ${i}`);
-      const lower = modelPart(upper, `Lower ${i}`);
-      const paw = modelPart(lower, `Paw ${i}`);
+      const upper = jointOf(`Leg ${i}`);
+      const lower = jointOf(`Lower ${i}`);
+      const paw = jointOf(`Paw ${i}`);
       return {
         upper, lower, paw, hip: upper.position.clone(),
         neutralPaw: upper.position.clone().add(lower.position).add(paw.position),
@@ -81,7 +82,7 @@ export class QuadrupedGait {
         lowerAxis: paw.position.clone().normalize(),
         upperLength: lower.position.length(),
         lowerLength: paw.position.length(),
-        sole: modelPart(paw, `Sole ${i}`).position.y,
+        sole: jointOf(`Sole ${i}`).position.y,
         contact: new THREE.Vector3(), landing: new THREE.Vector3(), swinging: false,
         swingPosition: new THREE.Vector3(), lift: 0,
       };

@@ -190,8 +190,8 @@ const blend = (lower, upper, mix) => [[lower, 1 - mix], [upper, mix]];
 function clothing(skin, rig, p, id) {
   const ink = paint(p.shirt, p.light, p.dark, p.grain);
   const linen = paint('#b6aa8e', '#d5c8a8', '#887f6c', p.grain);
-  const vest = id === 'hasan' ? paint('#536e6e', '#81918a', '#374e51', p.grain)
-    : paint('#495c65', '#798388', '#34414f', p.grain);
+  const vestPalette = p.vest ?? (id === 'hasan' ? ['#536e6e', '#81918a', '#374e51'] : ['#495c65', '#798388', '#34414f']);
+  const vest = paint(...vestPalette, p.grain);
   const shell = p.cloth === 'vest' ? vest : ink;
   const seam = p.cloth === 'vest' ? '#38474d' : p.dark;
   const bottom = paint(p.pants, '#7a776f', '#3e3841', p.grain + 2);
@@ -756,8 +756,8 @@ function hairAndWrap(parts, face, p, id) {
   }
 }
 
-export function villagerModel(parent, name, id, seated = false) {
-  const p = villagers[id];
+export function villagerModel(parent, name, id, seated = false, appearance = {}) {
+  const p = { ...villagers[id], ...appearance };
   const root = group(null, name);
   const rig = makeRig(root, p, id);
   const figure = skinnedPaint(root, rig);

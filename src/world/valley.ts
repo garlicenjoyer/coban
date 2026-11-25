@@ -17,7 +17,7 @@ import type { Decor, Label, Layout, MapDef, MapProps, Prop, Sketcher, V2 } from 
 import { fbm, rng } from './noise';
 import { valleyNotes } from './valleyNotes';
 import { Surface, Terrain } from './terrain';
-import { COFFEEHOUSE, COURTYARD_TREES, FOUNTAIN, MOSQUE, SQUARE_TREE } from './villagePlan';
+import { CAFE, CAFE_TABLES, COURTYARD_TREES, FOUNTAIN, LAUNDRY, MEMORIAL, MINARET, SQUARE_ENTRANCE, SQUARE_TREE, VILLAGE_BUILDINGS, cafePoint } from './villagePlan';
 import { VALLEY_ERRANDS } from '../life/valleyErrands';
 
 export const VALLEY_SIZE = 1200;
@@ -89,13 +89,13 @@ export const valleyLayout: Layout & { grove: Grove; village: NonNullable<Layout[
     x: 410,
     z: -365,
     r: 22,
-    minaret: { x: 410 - 26, z: -365 + 36, h: 16 },
+    minaret: { x: 410 + MINARET.x, z: -365 + MINARET.z, h: MINARET.h },
     // Counters in front of the shops on the square (facing: the way the shopkeeper looks, radians).
     shops: [
       { id: 'dairy', x: 410 - 20.5, z: -365 - 4, facing: Math.PI / 2 },
       { id: 'bakkal', x: 410 + 20, z: -365 - 6, facing: -Math.PI / 2 },
       { id: 'usta', x: 410 + 22, z: -365 + 9, facing: -Math.PI / 2 },
-      { id: 'kahvehane', x: 410, z: -365 + 13.5, facing: Math.PI },
+      { id: 'kahvehane', x: 410 + CAFE.x, z: -365 + CAFE.z, facing: CAFE.facing },
       { id: 'muze', x: 410 - 22, z: -365 + 12, facing: Math.PI / 2 },
       // Round the back of the kahvehane, away from the square.
       { id: 'dealer', x: 410 + 4, z: -365 + 24.6, facing: 0 },
@@ -108,29 +108,8 @@ export const valleyLayout: Layout & { grove: Grove; village: NonNullable<Layout[
 const L = valleyLayout;
 const V = L.village;
 
-/** The village square: flat, packed earth, the kahvehane on its south side. */
+/** The village square: flat, packed earth. */
 const SQUARE = { hx: 16, hz: 12 };
-
-/** Village houses relative to the square: dx, dz, half-width, half-depth, wall height. */
-const HOUSES: [number, number, number, number, number][] = [
-  [-26, -4, 4, 3.5, 3.2],
-  [-27, 12, 3.5, 3, 4.6],
-  [26, -6, 4.5, 3.5, 4.8],
-  [27, 9, 3.5, 3.5, 3.2],
-  [-12, -24, 4, 3, 4.6],
-  [6, -26, 4.5, 3.5, 3.2],
-  [24, -24, 3.5, 3, 4.8],
-  [43, -12, 4, 3.5, 3.2],
-  [44, 6, 3.5, 3, 4.6],
-  [-4, -42, 4, 3.5, 4.6],
-  [16, -44, 3.5, 3, 3.2],
-  [36, -40, 4, 3.5, 4.8],
-  [56, -28, 3.5, 3.5, 3.2],
-  [60, -6, 4, 3, 4.6],
-  [-30, -26, 3.5, 3, 3.2],
-  [32, 27, 4, 3, 3.2],
-];
-const MINARET = { dx: V.minaret!.x - V.x, dz: V.minaret!.z - V.z, r: 1.1, h: V.minaret!.h };
 
 // ---------- roads, riverbed, routes ----------
 
@@ -149,7 +128,7 @@ const MAIN_ROAD: V2[] = [
   { x: 320, z: -180 },
   { x: 350, z: -270 },
   { x: 385, z: -330 },
-  { x: V.x, z: V.z },
+  { x: V.x + SQUARE_ENTRANCE[0], z: V.z + SQUARE_ENTRANCE[1] },
 ];
 /** The dirt road up to the lookout, leaving the gravel road and climbing the west flank. */
 const HILL_ROAD: V2[] = [
@@ -407,7 +386,11 @@ export function buildTerrain(): Terrain {
   const f = L.works.fold;
   const foldLevel = rawHeight((f.xMin + f.xMax) / 2 - 3, (f.zMin + f.zMax) / 2 - 3);
   const squareLevel = rawHeight(V.x, V.z);
-  const pads = [...HOUSES, COFFEEHOUSE, MOSQUE].map(([dx, dz, hx, hz]) => ({ x: V.x + dx, z: V.z + dz, hx: hx + 1.5, hz: hz + 1.5, level: rawHeight(V.x + dx, V.z + dz) }));
+  const pads = VILLAGE_BUILDINGS.map(([dx, dz, hx, hz]) => ({
+    x: V.x + dx, z: V.z + dz, hx: hx + 1.5, hz: hz + 1.5, level: rawHeight(V.x + dx, V.z + dz),
+  }));
+  // The entrance terrace runs from the roadside to the coffeehouse front wall.
+  pads.push({ x: V.x + CAFE.x + 3.1, z: V.z + CAFE.z, hx: 8.4, hz: 6.8, level: rawHeight(V.x + CAFE.x, V.z + CAFE.z) });
 
   for (let ix = 0; ix < N; ix++) {
     for (let iz = 0; iz < N; iz++) {
@@ -584,15 +567,23 @@ export function buildProps(t: Terrain): MapProps {
   }
 
   // ---------------------------------------------------------------- the village
-  for (const [dx, dz, hx, hz, h] of [...HOUSES, COFFEEHOUSE, MOSQUE]) {
+  for (const [dx, dz, hx, hz, h] of VILLAGE_BUILDINGS) {
     const x = V.x + dx;
     const z = V.z + dz;
     const y = t.heightAt(x, z);
     props.push({ kind: 'box', role: 'building', x, y: y + h / 2, z, hx, hy: h / 2, hz });
   }
-  const mx = V.x + MINARET.dx;
-  const mz = V.z + MINARET.dz;
+  const mx = V.x + MINARET.x;
+  const mz = V.z + MINARET.z;
   props.push({ kind: 'cyl', role: 'minaret', x: mx, y: t.heightAt(mx, mz), z: mz, radius: MINARET.r, height: MINARET.h });
+  const villageFixture = ({ x: dx, z: dz }: V2, radius: number, height: number) => {
+    const x = V.x + dx, z = V.z + dz;
+    props.push({ kind: 'cyl', role: 'villageFixture', x, y: t.heightAt(x, z), z, radius, height });
+  };
+  for (const { x, z } of CAFE_TABLES) villageFixture(cafePoint(x, z), 0.47, 0.80);
+  villageFixture(MEMORIAL, MEMORIAL.radius, MEMORIAL.height);
+  for (const x of [-4.05, -1.35, 1.35, 4.05]) villageFixture(cafePoint(x, 2.62), 0.10, 2.52);
+  for (const side of [-1, 1]) villageFixture({ x: LAUNDRY.x + side * LAUNDRY.halfSpan, z: LAUNDRY.z }, 0.07, LAUNDRY.height);
   for (const tree of [SQUARE_TREE, ...COURTYARD_TREES]) {
     const x = V.x + tree.x, z = V.z + tree.z;
     props.push({ kind: 'cyl', role: 'villageTree', x, y: t.heightAt(x, z), z, radius: tree.radius, height: tree.height });
@@ -685,7 +676,7 @@ function sketch(s: Sketcher): void {
 
   // The village: little blocks for its houses, the minaret a dot.
   g.fillStyle = 'rgba(190, 100, 60, 0.75)';
-  for (const [dx, dz, hx, hz] of [...HOUSES, COFFEEHOUSE, MOSQUE]) g.fillRect(px(V.x + dx - hx), py(V.z + dz - hz), hx * 2 * s.scale + 1, hz * 2 * s.scale + 1);
+  for (const [dx, dz, hx, hz] of VILLAGE_BUILDINGS) g.fillRect(px(V.x + dx - hx), py(V.z + dz - hz), hx * 2 * s.scale + 1, hz * 2 * s.scale + 1);
   label('the village', V.x, V.z + 62, 15);
 
   // Area names.
@@ -761,7 +752,7 @@ export const VALLEY_MAP: MapDef = {
       { hour: 16.2, point: 0, place: 'the upper road pullout', activity: 'That’s the tractor put away for today.' },
     ] },
     { resident: 'zeynep', points: [
-      { x: 397, z: -359 }, { x: 406, z: -362 }, { x: 408, z: -366 },
+      { x: 397, z: -359 }, { x: 405, z: -362 }, { x: 406.8, z: -366 },
       { x: 402, z: -358 }, { x: 391, z: -326 }, { x: 377, z: -315 },
       { x: 354, z: -273 }, { x: 341, z: -242 }, { x: 329, z: -207 },
       { x: 319, z: -180 }, { x: 316, z: -171 }, { x: 322, z: -172 },
@@ -797,11 +788,11 @@ export const VALLEY_MAP: MapDef = {
       { hour: 16.6, point: 0, place: 'the upper grove shelter', activity: 'The baskets can wait until morning.' },
     ] },
     { resident: 'hasan', points: [
-      { x: 413, z: -374 }, { x: 408, z: -401 }, { x: 427, z: -402 },
+      { x: 412, z: -374 }, { x: 408, z: -401 }, { x: 427, z: -402 },
       { x: 440, z: -394 }, { x: 443, z: -382 }, { x: 434, z: -379 },
       { x: 426, z: -374 }, { x: 425, z: -366 }, { x: 418, z: -367 },
       { x: 417, z: -356 }, { x: 416, z: -349 }, { x: 411, z: -357 },
-      { x: 411, z: -368 },
+      { x: 413.1, z: -368 },
     ], stops: [
       { hour: 0, point: 0, place: 'the north side of the square', activity: 'I’m done with the square for today.' },
       { hour: 6.72, point: 2, place: 'the upper village lane', activity: 'I’m sweeping between the houses while it’s quiet.', pose: 'sweep' },
@@ -809,7 +800,7 @@ export const VALLEY_MAP: MapDef = {
       { hour: 9.25, point: 6, place: 'the edge of the square', activity: 'I’m clearing the way down to the fountain.' },
       { hour: 10.75, point: 8, place: 'the village fountain', activity: 'I’m clearing leaves from the fountain.', pose: 'sweep' },
       { hour: 12.5, point: 9, place: 'the south side of the square', activity: 'I’m keeping the busiest path clear.', pose: 'sweep' },
-      { hour: 14.0, point: 10, place: 'the kahvehane', activity: 'There’s time for a glass of çay now.', pose: 'tea' },
+      { hour: 14.0, point: 10, place: 'the south end of the square', activity: 'I brought a glass up from the kıraathane. There’s more çay at the village entrance.', pose: 'tea' },
       { hour: 15.6, point: 12, place: 'the fountain path', activity: 'I take one last walk around the square.' },
       { hour: 17, point: 0, place: 'the north side of the square', activity: 'I’ll open up the square again in the morning.' },
     ] },

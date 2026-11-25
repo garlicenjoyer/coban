@@ -1,7 +1,7 @@
 import type { ResidentId, ResidentStop } from '../world/mapTypes';
 
 export type WorkPose = NonNullable<ResidentStop['pose']>;
-export type WorkSound = 'broom' | 'oliveRustle' | 'oliveDrop' | 'teaSip' | 'tractorCheck' | 'churn';
+export type WorkSound = 'broom' | 'oliveRustle' | 'oliveDrop' | 'teaSip' | 'tractorCheck' | 'churn' | 'tavla';
 
 export const workCycle = { sort: 4, sweep: 3.62, tea: 5.5, emre: 5.7, zeynep: 6.4 } as const;
 

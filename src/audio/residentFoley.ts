@@ -70,6 +70,10 @@ export function playResidentFoley(ctx: AudioContext, noise: AudioBuffer, pan: Pa
       friction(0, 0.18, 520, 1080, 0.07, 0.28);
       friction(0.027, 0.13, 1300, 1750, 0.055);
       break;
+    case 'tavla':
+      friction(0, 0.036, 1450, 670, 0.17);
+      ring(0.002, 0.057, 895, 0.087);
+      break;
     case 'tractorCheck':
       friction(0, 0.07, 700, 350, 0.14);
       ring(0.002, 0.12, 465, 0.12);

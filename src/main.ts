@@ -64,6 +64,7 @@ import { TitleScreen } from './ui/titleScreen';
 import { LifeView } from './life/lifeView';
 import { ErrandsView } from './life/errandsView';
 import { ResidentDialogueView } from './ui/residentDialogueView';
+import { VillageLifeView } from './life/villageLifeView';
 
 async function main() {
   const params = new URLSearchParams(location.search);
@@ -154,6 +155,8 @@ async function main() {
   scene.add(homestead.root);
   const villageView = village && villageModels ? new VillageView(sim.terrain, village, sim.map, villageModels, valleyProps) : undefined;
   if (villageView) scene.add(villageView.root);
+  const villageLife = village ? new VillageLifeView(village, sim.terrain, lifeModels, valleyProps) : undefined;
+  if (villageLife) scene.add(villageLife.root);
   // Wild herbs and finds, the milking stand and churn.
   const economyView = new EconomyView(sim.terrain, valleyProps, fieldProps);
   scene.add(economyView.root);
@@ -185,7 +188,7 @@ async function main() {
   scene.add(herding.root);
   const wolfView = new WolfView(() => sim.wolves, wolfModel, groundAt);
   scene.add(wolfView.root);
-  const lifeView = new LifeView(lifeModels, groundAt);
+  const lifeView = new LifeView(lifeModels, groundAt, village);
   scene.add(lifeView.root);
   const errandsView = new ErrandsView(sim.errands, sim.terrain, lifeModels);
   scene.add(errandsView.root);
@@ -294,6 +297,10 @@ async function main() {
   const rig = new CameraRig(RAPIER, () => sim.world, () => sim.player.collider, groundAt, canvas);
   sim.events.on('lifeSound', (e) => lifeAudio.call(e.kind, e, rig.camera.position));
   sim.events.on('workSound', (e) => lifeAudio.work(e.kind, e, rig.camera.position));
+  const villageSounds: Parameters<VillageLifeView['update']>[5] = {
+    voice: (point, id, speech) => residentVoice.chatter(point, rig.camera.position, id, speech),
+    work: (kind, point) => lifeAudio.work(kind, point, rig.camera.position),
+  };
 
   // ---------- debug ----------
   const colliderLines = new THREE.LineSegments(
@@ -471,6 +478,7 @@ async function main() {
       perf.lap('audio');
       daylight.update(sim.hour, sim.tasks.day, playerView.renderPos, cam.position);
       villageView?.update(sim.hour, sim.tasks.day, cam.position);
+      villageLife?.update(sim.hour, (sim.tick + alpha) * SIM_DT, dt * loop.timeScale, sim.player.pos, cam.position, villageSounds);
       updateWind(performance.now() / 1000, dt, sim.hour);
       labels.visible = config.debug.showLabels;
       perf.lap('daylight');

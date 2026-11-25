@@ -112,20 +112,6 @@ function porchTable() {
 function cafeTable() {
   const p = new Parts();
   table(p, 0.4);
-  const x0 = -0.115;
-  // A flat-woven runner with alternating blue and rust stripes.
-  p.box([x0, 0.804, 0], [0.19, 0.008, 0.67], 0xb39671);
-  for (let k = -7; k <= 7; k++) p.box([x0, 0.809, k * 0.044], [0.177, 0.004, k % 3 === 0 ? 0.018 : 0.006],
-    k % 3 === 0 ? 0x396967 : 0x9d543a);
-  for (const z of [-0.337, 0.337]) {
-    for (let i = 0; i < 11; i++) p.rod([x0 - 0.083 + i * 0.016, 0.805, z],
-      [x0 - 0.083 + i * 0.016, 0.797 - (i % 3) * 0.003, z * 1.059], 0.0017, 0.0013, 0xe0c6a0, 4);
-  }
-  for (const [x, z] of [[-0.12, -0.174], [0.146, 0.125]]) {
-    dish(p, [x, 0.812, z]);
-    teaGlass(p, [x, 0.812, z]);
-    spoon(p, [x + 0.057, 0.837, z]);
-  }
   return p;
 }
 

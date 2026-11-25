@@ -2,6 +2,7 @@ import { CylinderGeometry, DodecahedronGeometry, Group } from 'three';
 import { group, Parts } from './model-parts.mjs';
 import { crate } from './village-market.mjs';
 import { villagerModel } from './villager-models.mjs';
+import { villageCatModels } from './village-cat-models.mjs';
 
 const charcoal = '#373632';
 const iron = '#62645c';
@@ -249,8 +250,38 @@ export function valleyLifeModels() {
   bird(catalogue, 'Hoopoe', true);
   mammal(catalogue, 'Hare', false);
   mammal(catalogue, 'Fox', true);
+  villageCatModels(catalogue);
   villagerModel(catalogue, 'Ayse', 'ayse');
   villagerModel(catalogue, 'Hasan', 'hasan');
+  villagerModel(catalogue, 'Ismail', 'hasan', false, {
+    size: 1.02, build: 1.12, face: [0.104, 1.02, 0.8, 0.99, 0.81, 0.005],
+    vest: ['#624c41', '#94725b', '#433834'], wrap: '#626b52', wrapLight: '#819273', trim: '#b8ac86',
+    shirt: '#a49b80', pants: '#4c5248', grain: 3.1,
+  });
+  villagerModel(catalogue, 'Riza', 'hasan', false, {
+    size: 0.98, build: 0.91, face: [0.087, 1.11, 1.04, 1.19, 0.84, -0.003],
+    vest: ['#706447', '#9b8d62', '#4c4435'], wrap: '#514d4d', wrapLight: '#777372', trim: '#a69a86',
+    shirt: '#865748', light: '#ad7762', dark: '#593e38', pants: '#474c55', grain: 1.2,
+  });
+  villagerModel(catalogue, 'Cemal', 'emre', false, {
+    size: 1.00, build: 1.07, face: [0.102, 1.08, 0.86, 1.02, 0.91, 0.001],
+    shirt: '#637884', light: '#92a3a7', dark: '#454f5a', pants: '#524e4b', hair: '#73655a', grain: 3.85,
+  });
+  villagerModel(catalogue, 'Emine', 'ayse', false, {
+    size: 0.98, build: 1.17, face: [0.1, 1.06, 0.81, 1.0, 1.02, 0.003],
+    wrap: '#3e636a', wrapLight: '#729297', trim: '#d4bc8f',
+    shirt: '#ad7851', light: '#d7a372', dark: '#835741', pants: '#5c5f4c', grain: 3.0,
+  });
+  villagerModel(catalogue, 'Nermin', 'zeynep', false, {
+    build: 1.01, face: [0.097, 1.02, 0.76, 0.89, 1.01, 0.004],
+    vest: ['#694e61', '#967688', '#503c4f'], wrap: '#cec0a2', wrapLight: '#e5d8bf', trim: '#b18062',
+    shirt: '#726351', pants: '#56516a', grain: 5.3,
+  });
+  villagerModel(catalogue, 'Selma', 'ayse', false, {
+    size: 0.95, build: 0.98, face: [0.093, 0.99, 0.87, 1.02, 1.04, -0.002],
+    wrap: '#c1a15d', wrapLight: '#dfba78', trim: '#795c5b',
+    shirt: '#537343', light: '#829267', dark: '#424f3d', pants: '#4a5454', grain: 1.34,
+  });
   tractor(catalogue, 'Rust Tractor', '#9f5340', '#bf7955', 'emre');
   tractor(catalogue, 'Blue Tractor', '#537b87', '#779897', 'zeynep');
   errandProps(catalogue);

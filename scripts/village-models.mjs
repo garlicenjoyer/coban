@@ -2,6 +2,7 @@ import { Int16BufferAttribute, Uint8BufferAttribute } from 'three';
 import { group, Parts } from './model-parts.mjs';
 import { HOUSE_NAMES, coffeehouse, house, minaret, mosque, planeTree } from './village-buildings.mjs';
 import { bench, carpet, dealer, flowerPot, fountain, lamp, market, shopModels, terraceWall, vet } from './village-market.mjs';
+import { ataturkBust, ataturkPlinth } from './village-memorial.mjs';
 
 export function villageModels() {
   const root = group(null, 'Village model library');
@@ -23,6 +24,12 @@ export function villageModels() {
   lamp(frame, glass);
   frame.mesh(fixture, 'Lantern ironwork');
   glass.mesh(fixture, 'Lantern panes');
+  const memorial = group(root, 'Atatürk memorial', [15, 0, 61]);
+  const plinth = new Parts(), bust = new Parts();
+  ataturkPlinth(plinth);
+  ataturkBust(bust);
+  plinth.mesh(memorial, 'Memorial plinth');
+  bust.mesh(memorial, 'Atatürk carved bust');
   // Keep the high-detail set compact on the initial valley load.
   root.traverse((node) => {
     if (!node.isMesh) return;

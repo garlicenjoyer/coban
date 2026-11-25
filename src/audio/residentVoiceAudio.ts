@@ -1,4 +1,5 @@
 import type { GameAudio } from './audio';
+import type { Vec3Like } from '../core/events';
 import type { ResidentDialogue } from '../life/dialogue';
 import { residentVoices, type ResidentSpeech, type Vowel } from '../life/residentSpeech';
 import type { ResidentId } from '../world/mapTypes';
@@ -83,6 +84,13 @@ export class ResidentVoiceAudio {
   private release?: () => void;
 
   constructor(private readonly audio: GameAudio) {}
+
+  chatter(point: Vec3Like, listener: Vec3Like, id: ResidentId, speech: ResidentSpeech): void {
+    const bus = this.audio.context();
+    if (!bus || this.audio.volume === 0 || Math.hypot(point.x - listener.x, point.z - listener.z) > 19) return;
+    const pan = spatial(bus, point, 1.9);
+    if (!playResidentSpeech(bus.ctx, pan, id, speech, 0, () => pan.disconnect())) pan.disconnect();
+  }
 
   update(dialogue: ResidentDialogue | null, paused: boolean): void {
     const bus = this.audio.context();
