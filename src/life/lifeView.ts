@@ -5,6 +5,7 @@ import { modelPart } from '../render/gameModel';
 import { angleDelta, type Resident, type Residents } from './residents';
 import type { Animal, Species, Wildlife } from './wildlife';
 import { residentFace, residentGesture, residentWork, type GesturePose } from './residentAnimation';
+import { speechMouth } from './residentSpeech';
 
 const { lerp, clamp } = THREE.MathUtils;
 const speciesModels: Record<Species, string> = { swallow: 'Swallow', hoopoe: 'Hoopoe', hare: 'Hare', fox: 'Fox' };
@@ -100,7 +101,7 @@ class ResidentPose {
     this.head.rotation.x = Math.sin(time * 1.6) * 0.026;
     const face = residentFace(r.id, time, r.lineAge, r.speaking);
     this.eyes.forEach((eye) => { eye.scale.y = face.eyes; });
-    this.mouth.scale.y = face.mouth;
+    this.mouth.scale.y = r.speech ? speechMouth(r.speech, r.lineAge) : face.mouth;
     const pose = r.settled ? r.destination.pose : undefined;
     this.working = lerp(this.working, r.workPose ? 1 : 0, 1 - Math.exp(-dt * 7));
     if (r.tractor) {
@@ -327,12 +328,7 @@ export class LifeView {
       this.animals = wildlife.animals.map((animal) => new AnimalPose(modelPart(this.models, speciesModels[animal.species]), animal.species));
       this.root.add(...this.residents.map((pose) => pose.root), ...this.animals.map((pose) => pose.root));
       for (const resident of residents.list) {
-        for (const stop of resident.stops) {
-          if (stop.pose !== 'sort') continue;
-          const point = resident.circuit.atStop(stop.point);
-          const at = resident.circuit.at(point);
-          const yaw = resident.circuit.headingAt(point);
-          const x = at.x + Math.sin(yaw) * 0.69, z = at.z + Math.cos(yaw) * 0.69;
+        for (const { x, z, yaw } of resident.sortingStands.values()) {
           const stand = modelPart(this.models, 'Olive sorting stand').clone(true);
           stand.position.set(x, this.groundAt(x, z), z);
           stand.rotation.y = yaw;

@@ -1,8 +1,10 @@
 import type { EventBus, Vec3Like } from '../core/events';
+import { config } from '../core/config';
 import type { ResidentId, ResidentStop, ValleyRoute, V2 } from '../world/mapTypes';
 import type { Obstacles } from '../world/obstacles';
 import type { Terrain } from '../world/terrain';
 import type { ResidentGesture } from './dialogue';
+import type { ResidentSpeech } from './residentSpeech';
 import { workSounds, type WorkPose } from './residentWork';
 
 const profiles = {
@@ -59,6 +61,11 @@ class Circuit {
   atStop(point: number): number {
     return this.lengths[Math.max(0, point * 4 - 1)];
   }
+
+  forward(from: number, to: number): number {
+    const arc = (to - from + this.length) % this.length;
+    return arc > this.length - 0.001 ? 0 : arc;
+  }
 }
 
 interface Context {
@@ -85,6 +92,7 @@ export class Resident {
   readonly circuit: Circuit;
   readonly clearance: number;
   readonly stops: readonly ResidentStop[];
+  readonly sortingStands = new Map<ResidentStop, V2 & { yaw: number }>();
   x: number;
   y: number;
   z: number;
@@ -107,8 +115,13 @@ export class Resident {
   private shoulder = 0;
   private progress = 0;
   private waveReady = true;
+  private approachReady = true;
+  private approachWait = 0;
+  private linger = 0;
+  private excursion: 'out' | 'back' | null = null;
   conversation = false;
   lineAge = Infinity;
+  speech?: ResidentSpeech;
   workTime = 0;
   gesture: ResidentGesture = 'greet';
   private lineDuration = 0;
@@ -120,6 +133,18 @@ export class Resident {
     this.clearance = this.tractor ? 1.1 : 0.48;
     this.circuit = new Circuit(route.points);
     this.stops = route.stops;
+    // Keep the sorting tables along the shoulder so leaving a station never means walking through it.
+    for (const stop of this.stops) {
+      if (stop.pose !== 'sort') continue;
+      const point = this.circuit.atStop(stop.point);
+      const at = this.circuit.at(point);
+      const heading = this.circuit.headingAt(point);
+      const side = heading + Math.PI / 2;
+      const dx = Math.sin(side) * 0.76, dz = Math.cos(side) * 0.76;
+      const reverse = this.obstacles.blocked(at.x + dx, at.z + dz, 0.46);
+      this.sortingStands.set(stop, reverse ? { x: at.x - dx, z: at.z - dz, yaw: side - Math.PI }
+        : { x: at.x + dx, z: at.z + dz, yaw: side });
+    }
     this.destination = this.stops[0];
     const { x, z } = this.circuit.at(0);
     this.x = this.px = x;
@@ -142,13 +167,17 @@ export class Resident {
     this.x = this.px = x;
     this.z = this.pz = z;
     this.y = this.py = this.terrain.heightAt(x, z);
-    this.yaw = this.previousYaw = this.circuit.headingAt(this.progress);
+    this.yaw = this.previousYaw = this.sortingStands.get(this.destination)?.yaw ?? this.circuit.headingAt(this.progress);
     this.offset = this.shoulder = this.speed = this.wave = this.glance = 0;
     this.conversation = false;
     this.lineAge = Infinity;
+    this.speech = undefined;
     this.workTime = 0;
     this.yielding = false;
     this.waveReady = true;
+    this.approachReady = true;
+    this.approachWait = this.linger = 0;
+    this.excursion = null;
     this.settled = true;
     this.parked = this.tractor;
   }
@@ -179,15 +208,17 @@ export class Resident {
     return distance(this, player) < reach && Math.abs(this.y - player.y) < 1.8 && this.visibleTo(player);
   }
 
-  perform(gesture: ResidentGesture, seconds: number): void {
+  perform(gesture: ResidentGesture, seconds: number, speech?: ResidentSpeech): void {
     this.gesture = gesture;
     this.lineDuration = seconds;
+    this.speech = speech;
     this.lineAge = 0;
     this.wave = 0;
     this.waveReady = false;
   }
 
   routine(): string {
+    if (this.excursion) return `I’m taking a short walk near ${this.destination.place}.`;
     return this.settled ? this.destination.activity : `I’m on my way to ${this.destination.place}.`;
   }
 
@@ -214,22 +245,48 @@ export class Resident {
     this.pz = this.z;
     this.previousYaw = this.yaw;
     this.wave = Math.max(0, this.wave - dt);
+    this.approachWait = Math.max(0, this.approachWait - dt);
     this.lineAge += dt;
     const stop = this.stopAt(ctx.hour);
-    const goal = this.circuit.atStop(stop.point);
-    const left = (goal - this.progress + this.circuit.length) % this.circuit.length;
-    if (stop !== this.destination) this.workTime = 0;
+    if (stop !== this.destination) {
+      this.workTime = this.linger = 0;
+      this.excursion = null;
+    }
     this.destination = stop;
-    this.settled = left < 0.001;
+    const anchor = this.circuit.atStop(stop.point);
+    const nextStop = this.stops[this.stops.indexOf(stop) + 1];
+    const span = nextStop ? Math.min(13, this.circuit.forward(anchor, this.circuit.atStop(nextStop.point)) * 0.56) : 0;
+    const atAnchor = this.circuit.forward(this.progress, anchor) < 0.001;
+    if (!this.tractor && stop.hour > 0 && nextStop && span > 3 && atAnchor && !this.excursion
+      && !this.conversation && !this.gesturing && this.wave === 0) {
+      this.linger += dt;
+      const beforeDeparture = (nextStop.hour - ctx.hour) * config.time.secondsPerHour;
+      if (this.linger > (this.id === 'hasan' ? 14 : 19) && beforeDeparture > span * 2 / this.profile.pace + 10) {
+        this.excursion = 'out';
+        this.linger = 0;
+      }
+    }
+    const direction = this.excursion === 'back' ? -1 : 1;
+    const goal = this.excursion === 'out' ? (anchor + span) % this.circuit.length : anchor;
+    const left = direction > 0 ? this.circuit.forward(this.progress, goal) : this.circuit.forward(goal, this.progress);
+    this.settled = atAnchor && !this.excursion;
     this.parked = this.tractor && this.settled;
     const playerDist = distance(this, ctx.player);
     if (playerDist > 13) this.waveReady = true;
+    if (playerDist > 11) this.approachReady = true;
+    // Give a nearby shepherd one chance to flag down a passing driver on foot.
+    if (this.tractor && !this.settled && this.approachReady && !this.conversation && !ctx.rider && ctx.playerSpeed < 2.5
+      && this.withinConversation(ctx.player, 6.3)) {
+      this.approachReady = false;
+      this.approachWait = 3.8;
+    }
     if (!this.tractor && this.waveReady && playerDist < 8 && !ctx.rider && ctx.playerSpeed < 3 && this.visibleTo(ctx.player)) {
       this.waveReady = false;
       this.wave = 1.5;
     }
 
-    const heading = this.circuit.headingAt(this.progress);
+    const turn = direction < 0 ? Math.PI : 0;
+    const heading = this.circuit.headingAt(this.progress) + turn;
     const base = this.circuit.at(this.progress);
     const fx = Math.sin(heading), fz = Math.cos(heading);
     const ahead = (p: V2, reach: number, width: number) => {
@@ -261,21 +318,21 @@ export class Resident {
       if (!this.clear(bankX, bankZ) || this.terrain.slopeDegAt(bankX, bankZ) > 20) this.shoulder = 0;
     }
 
-    const corner = Math.abs(angleDelta(heading, this.circuit.headingAt(this.progress + 2.4)));
+    const corner = Math.abs(angleDelta(heading, this.circuit.headingAt(this.progress + direction * 2.4) + turn));
     const slowed = this.profile.pace / (1 + corner * 1.9);
-    const next = this.circuit.at(this.progress + Math.min(left, Math.max(0.5, this.speed * 0.55)));
+    const next = this.circuit.at(this.progress + direction * Math.min(left, Math.max(0.5, this.speed * 0.55)));
     const routeOpen = this.clear(next.x, next.z);
     const canGo = !this.settled && !this.conversation && routeOpen;
-    const targetSpeed = canGo && !this.yielding ? Math.min(slowed, Math.sqrt(left * 4)) : 0;
+    const targetSpeed = canGo && !this.yielding && this.approachWait === 0 ? Math.min(slowed, Math.sqrt(left * 4)) : 0;
     const rate = targetSpeed > this.speed ? 1.9 : 5.2;
     this.speed += Math.max(-rate * dt, Math.min(rate * dt, targetSpeed - this.speed));
     const safeAhead = !blocker || !ahead(blocker, this.tractor ? 2.4 : 0.8, swept);
     if (!safeAhead || !routeOpen || this.settled) this.speed = 0;
     const move = this.speed * dt;
     const arrived = move > 0 && left - move < 0.001;
-    const newProgress = arrived ? goal : (this.progress + move) % this.circuit.length;
+    const newProgress = arrived ? goal : move ? (this.progress + direction * move + this.circuit.length) % this.circuit.length : this.progress;
     const path = this.circuit.at(newProgress);
-    const yaw = this.circuit.headingAt(newProgress);
+    const yaw = this.circuit.headingAt(newProgress) + turn;
     const wantedOffset = this.yielding ? this.shoulder : 0;
     // Pedestrians step aside even when stopped. Tractors ease over while still rolling.
     const sideSpeed = this.tractor ? Math.min(1.15, this.speed * 0.55) : 1.2;
@@ -284,8 +341,9 @@ export class Resident {
     const x = path.x + Math.cos(yaw) * offset, z = path.z - Math.sin(yaw) * offset;
     if (this.clear(x, z) || Math.hypot(x - this.x, z - this.z) < 0.00001) {
       if (arrived) {
-        this.settled = true;
-        this.parked = this.tractor;
+        this.excursion = this.excursion === 'out' ? 'back' : null;
+        this.settled = !this.excursion;
+        this.parked = this.tractor && this.settled;
         this.speed = 0;
       }
       this.progress = newProgress;
@@ -295,8 +353,10 @@ export class Resident {
       this.z = z;
     } else this.speed = 0;
 
-    const towardPlayer = playerDist < 9 && !ctx.rider && (this.conversation || this.gesturing || this.wave > 0 || this.yielding);
-    const facing = towardPlayer && !this.tractor ? Math.atan2(ctx.player.x - this.x, ctx.player.z - this.z) : yaw;
+    const towardPlayer = playerDist < 9 && !ctx.rider
+      && (this.conversation || this.gesturing || this.wave > 0 || this.yielding || this.approachWait > 0);
+    const stationYaw = this.settled ? this.sortingStands.get(stop)?.yaw : undefined;
+    const facing = towardPlayer && !this.tractor ? Math.atan2(ctx.player.x - this.x, ctx.player.z - this.z) : stationYaw ?? yaw;
     this.yaw += angleDelta(this.yaw, facing) * Math.min(1, dt * 6);
     const glance = towardPlayer ? Math.max(-1.15, Math.min(1.15, angleDelta(this.yaw, Math.atan2(ctx.player.x - this.x, ctx.player.z - this.z)))) : 0;
     this.glance += (glance - this.glance) * Math.min(1, dt * 7);
@@ -339,11 +399,12 @@ export class Residents {
         this.events.emit('lifeSound', { kind: 'step', x: resident.x, y: resident.y, z: resident.z });
       const pose = resident.workPose;
       if (pose && range < 32) {
-        const forward = pose === 'sort' ? 0.69 : pose === 'check' ? 0.42 : 0.36;
+        const station = resident.sortingStands.get(resident.destination);
+        const forward = pose === 'check' ? 0.42 : 0.36;
         const lift = pose === 'sweep' ? 0.08 : pose === 'sort' ? 0.86 : 1.36;
         for (const kind of workSounds(resident.id, pose, workTime, resident.workTime)) {
-          this.events.emit('workSound', { kind, x: resident.x + Math.sin(resident.yaw) * forward,
-            y: resident.y + lift, z: resident.z + Math.cos(resident.yaw) * forward });
+          this.events.emit('workSound', { kind, x: station?.x ?? resident.x + Math.sin(resident.yaw) * forward,
+            y: resident.y + lift, z: station?.z ?? resident.z + Math.cos(resident.yaw) * forward });
         }
       }
     }

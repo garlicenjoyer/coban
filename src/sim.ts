@@ -39,7 +39,7 @@ import { Residents, type Resident } from './life/residents';
 import { Wildlife, wildlifeNames } from './life/wildlife';
 import { Errands, type ErrandTarget } from './life/errands';
 import { errandDirection, type DialogueChoice, type DialogueOption, type ResidentDialogue, type ResidentGesture } from './life/dialogue';
-import { voiceCues } from './audio/residentVoiceCues';
+import { planResidentSpeech } from './life/residentSpeech';
 
 /** Interact presses within this distance of the gate toggle it. */
 export const GATE_REACH = 2.5;
@@ -1041,8 +1041,8 @@ export class Sim {
       { id: 'leave', label: offer ? 'Maybe later' : 'See you later' },
     );
     resident.conversation = true;
-    const seconds = voiceCues[resident.id][text]?.[1] ?? Math.min(8, Math.max(2.2, text.length / 19));
-    resident.perform(gesture, seconds);
+    const speech = planResidentSpeech(resident.id, text, gesture);
+    resident.perform(gesture, Math.max(1.5, speech.duration), speech);
     this.dialogue = { resident, text, offer, options };
   }
 

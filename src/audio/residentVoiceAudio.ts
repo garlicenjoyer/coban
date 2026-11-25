@@ -1,83 +1,112 @@
 import type { GameAudio } from './audio';
-import type { Vec3Like } from '../core/events';
 import type { ResidentDialogue } from '../life/dialogue';
-import type { Resident, ResidentId } from '../life/residents';
-import { voiceCues } from './residentVoiceCues';
+import { residentVoices, type ResidentSpeech, type Vowel } from '../life/residentSpeech';
+import type { ResidentId } from '../world/mapTypes';
 import { position, spatial } from './valleyLifeAudio';
 
+const formants: Record<Vowel, readonly [number, number]> = {
+  a: [810, 1510], e: [530, 2080], i: [380, 2520], o: [580, 1030], u: [355, 890],
+};
+
+export function playResidentSpeech(
+  ctx: BaseAudioContext, output: AudioNode, id: ResidentId, speech: ResidentSpeech, elapsed = 0, ended?: () => void,
+): (() => void) | undefined {
+  const syllables = speech.syllables.filter(({ start, length }) => start + length > elapsed + 0.012);
+  if (!syllables.length) return;
+  const voice = residentVoices[id];
+  const now = ctx.currentTime + 0.012;
+  const tone = ctx.createOscillator();
+  const body = ctx.createOscillator();
+  tone.type = 'sawtooth';
+  body.type = id === 'hasan' ? 'triangle' : 'sine';
+  const envelope = ctx.createGain();
+  envelope.gain.value = 0;
+  const level = ctx.createGain();
+  const low = ctx.createBiquadFilter();
+  const high = ctx.createBiquadFilter();
+  const color = ctx.createGain();
+  low.type = high.type = 'bandpass';
+  low.Q.value = 1.45;
+  high.Q.value = 2.1;
+  color.gain.value = voice.edge * 0.55;
+  tone.connect(low).connect(envelope);
+  tone.connect(high).connect(color).connect(envelope);
+  body.connect(envelope);
+  envelope.connect(level).connect(output);
+
+  const first = now + Math.max(0, syllables[0].start - elapsed);
+  let end = first;
+  for (const syllable of syllables) {
+    const start = now + Math.max(0, syllable.start - elapsed);
+    end = now + syllable.start + syllable.length - elapsed;
+    const length = end - start;
+    const [f1, f2] = formants[syllable.vowel];
+    low.frequency.setValueAtTime(f1 * voice.brightness, start);
+    high.frequency.setValueAtTime(f2 * voice.brightness, start);
+    for (const oscillator of [tone, body]) {
+      oscillator.frequency.setValueAtTime(syllable.pitch * 0.995, start);
+      oscillator.frequency.exponentialRampToValueAtTime(syllable.pitch * 1.025, start + length * 0.38);
+      oscillator.frequency.exponentialRampToValueAtTime(syllable.pitch * 2 ** (syllable.bend / 12), end);
+    }
+    envelope.gain.setValueAtTime(0.0001, start);
+    envelope.gain.linearRampToValueAtTime(0.145 * syllable.accent, start + length * 0.2);
+    envelope.gain.exponentialRampToValueAtTime(0.092 * syllable.accent, start + length * 0.64);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, end);
+  }
+  const finish = end + 0.012;
+  tone.onended = () => {
+    tone.disconnect();
+    body.disconnect();
+    low.disconnect();
+    high.disconnect();
+    color.disconnect();
+    envelope.disconnect();
+    level.disconnect();
+    ended?.();
+  };
+  for (const oscillator of [tone, body]) {
+    oscillator.start(first);
+    oscillator.stop(finish);
+  }
+  return () => {
+    const time = ctx.currentTime;
+    if (time >= finish) return;
+    level.gain.setTargetAtTime(0, time, 0.007);
+    tone.stop(Math.min(finish, time + 0.026));
+    body.stop(Math.min(finish, time + 0.026));
+  };
+}
+
 export class ResidentVoiceAudio {
-  private readonly banks = new Map<ResidentId, Promise<AudioBuffer | null>>();
-  private decoder?: OfflineAudioContext;
-  private request: { line: ResidentDialogue } | null = null;
-  private playing?: { source: AudioBufferSourceNode; pan: PannerNode; level: GainNode };
+  private line: ResidentDialogue | null = null;
+  private pan?: PannerNode;
+  private release?: () => void;
 
   constructor(private readonly audio: GameAudio) {}
 
-  update(dialogue: ResidentDialogue | null, residents: readonly Resident[], listener: Vec3Like, paused: boolean): void {
+  update(dialogue: ResidentDialogue | null, paused: boolean): void {
     const bus = this.audio.context();
-    if (!bus || this.audio.volume === 0 || paused) {
-      this.stop();
-      return;
-    }
-    // Warm each bank in earshot so the first response can start immediately.
-    for (const resident of residents) {
-      if (Math.hypot(resident.x - listener.x, resident.z - listener.z) < 24) void this.bank(resident.id);
-    }
-    if (dialogue !== (this.request?.line ?? null)) {
-      this.stop();
-      if (dialogue) {
-        const resident = dialogue.resident;
-        const cue = voiceCues[resident.id][dialogue.text];
-        const request = { line: dialogue };
-        this.request = request;
-        if (cue) void this.bank(resident.id).then((buffer) => {
-          if (!buffer || this.request !== request || this.audio.volume === 0 || !resident.conversation || !resident.speaking) return;
-          const source = bus.ctx.createBufferSource();
-          const level = bus.ctx.createGain();
-          const pan = spatial(bus, resident, 5.8);
-          position(pan, resident, resident.tractor ? 2.32 : 1.61);
-          level.gain.value = 1.38;
-          source.buffer = buffer;
-          source.connect(level).connect(pan);
-          const playing = { source, level, pan };
-          this.playing = playing;
-          source.onended = () => {
-            source.disconnect();
-            level.disconnect();
-            pan.disconnect();
-            if (this.playing === playing) this.playing = undefined;
-          };
-          source.start(bus.ctx.currentTime, ...cue);
-        });
+    const current = bus && this.audio.volume > 0 && !paused ? dialogue : null;
+    if (current !== this.line) {
+      this.release?.();
+      this.release = undefined;
+      this.pan = undefined;
+      this.line = current;
+      const resident = current?.resident;
+      if (bus && resident?.speech && resident.speaking) {
+        const pan = spatial(bus, resident, 5.8);
+        this.pan = pan;
+        const ended = () => {
+          pan.disconnect();
+          if (this.pan === pan) this.pan = undefined;
+        };
+        this.release = playResidentSpeech(bus.ctx, pan, resident.id, resident.speech, resident.lineAge, ended);
+        if (!this.release) ended();
       }
     }
-    if (this.playing && dialogue) {
-      const resident = dialogue.resident;
-      position(this.playing.pan, resident, resident.tractor ? 2.32 : 1.61);
+    if (this.pan && current) {
+      const resident = current.resident;
+      position(this.pan, resident, resident.tractor ? 2.32 : 1.61);
     }
-  }
-
-  private bank(id: ResidentId): Promise<AudioBuffer | null> {
-    const cached = this.banks.get(id);
-    if (cached) return cached;
-    const reading = fetch(`${import.meta.env.BASE_URL}audio/villagers/${id}.m4a`)
-      .then(async (response) => {
-        if (!response.ok) return null;
-        const data = await response.arrayBuffer();
-        this.decoder ??= new OfflineAudioContext(1, 1, 24000);
-        return this.decoder.decodeAudioData(data);
-      }).catch(() => null);
-    this.banks.set(id, reading);
-    return reading;
-  }
-
-  private stop(): void {
-    this.request = null;
-    const playing = this.playing;
-    if (!playing) return;
-    const now = playing.source.context.currentTime;
-    playing.level.gain.setTargetAtTime(0, now, 0.012);
-    playing.source.stop(now + 0.045);
-    this.playing = undefined;
   }
 }

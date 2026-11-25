@@ -460,7 +460,7 @@ async function main() {
       cam.getWorldDirection(fwd);
       audio.setListener(cam.position.x, cam.position.y, cam.position.z, fwd.x, fwd.y, fwd.z);
       lifeAudio.update(sim.residents, cam.position, loop.timeScale === 0);
-      residentVoice.update(dialogueView.isOpen ? sim.dialogue : null, sim.residents.list, cam.position, loop.timeScale === 0);
+      residentVoice.update(dialogueView.isOpen ? sim.dialogue : null, loop.timeScale === 0);
       const mi = layout.village?.minaret;
       ambience.update(dt, {
         hour: sim.hour,
