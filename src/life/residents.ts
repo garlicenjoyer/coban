@@ -57,6 +57,18 @@ class Circuit {
     return between(this.points[lo], this.points[hi % this.points.length], (s - this.lengths[lo]) / (this.lengths[hi] - this.lengths[lo]));
   }
 
+  nearest(p: V2): number {
+    let best = Infinity, progress = 0;
+    for (const [i, a] of this.points.entries()) {
+      const b = this.points[(i + 1) % this.points.length], dx = b.x - a.x, dz = b.z - a.z;
+      const span = this.lengths[i + 1] - this.lengths[i];
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / (span * span || 1)));
+      const d = Math.hypot(p.x - a.x - dx * t, p.z - a.z - dz * t);
+      if (d < best) { best = d; progress = this.lengths[i] + span * t; }
+    }
+    return progress % this.length;
+  }
+
   headingAt(s: number): number {
     const a = this.at(s - 0.75), b = this.at(s + 0.75);
     return Math.atan2(b.x - a.x, b.z - a.z);
@@ -94,6 +106,8 @@ interface Greeting {
 export class Resident {
   readonly profile;
   vehicle?: RoadVehicle;
+  private trafficCar?: RoadVehicle;
+  private recovering = false;
   down = false;
   dodging = false;
   readonly circulates: boolean;
@@ -101,9 +115,33 @@ export class Resident {
   get vehicleKind(): VehicleKind { return this.profile.kind!; }
   get clearance(): number { return this.driving ? 1.1 : 0.48; }
 
+  /** While following a route the driver supplies the velocity. An impact transfers control to the chassis. */
+  trafficChassis(): RoadVehicle {
+    if (this.vehicle) return this.vehicle;
+    const body = this.trafficCar ??= new RoadVehicle(this, this.terrain, this.obstacles, this.vehicleKind);
+    if (!this.recovering) {
+      body.x = this.x; body.y = this.y; body.z = this.z; body.yaw = this.yaw;
+      body.px = this.px; body.py = this.py; body.pz = this.pz; body.previousYaw = this.previousYaw;
+      body.speed = this.speed; body.spin = 0;
+      body.pitch = this.pitch; body.roll = this.roll;
+    }
+    return body;
+  }
+
+  afterCollision(): void {
+    const body = this.trafficCar!;
+    this.recovering = true;
+    this.x = body.x; this.z = body.z; this.y = body.y; this.yaw = body.yaw;
+    this.pitch = body.pitch; this.roll = body.roll; this.speed = Math.abs(body.speed);
+  }
+
   releaseVehicle(parking: VehicleParking = this): RoadVehicle {
     if (!this.vehicle) {
-      this.vehicle = new RoadVehicle(parking, this.terrain, this.obstacles, this.vehicleKind);
+      this.vehicle = this.recovering && this.trafficCar && parking === this ? this.trafficCar
+        : new RoadVehicle(parking, this.terrain, this.obstacles, this.vehicleKind);
+      if (parking === this && !this.recovering) this.vehicle.speed = this.speed;
+      this.trafficCar = undefined;
+      this.recovering = false;
       const side = this.vehicle.beside();
       if (side && distance(this.vehicle, this) < 1.7) {
         this.offset = (side.x - this.x) * Math.cos(this.yaw) - (side.z - this.z) * Math.sin(this.yaw);
@@ -188,6 +226,7 @@ export class Resident {
 
   /** Place residents at their scheduled stop after sleeping or loading a save. */
   setTime(hour: number): void {
+    this.recovering = false;
     this.destination = this.stopAt(hour);
     this.progress = this.circuit.atStop(this.destination.point);
     const { x, z } = this.circuit.at(this.progress);
@@ -283,6 +322,20 @@ export class Resident {
     this.pz = this.z;
     this.previousYaw = this.yaw;
     if (this.down || this.dodging) return;
+    if (this.recovering && this.trafficCar) {
+      const body = this.trafficCar;
+      body.step(dt);
+      this.travel += Math.hypot(body.x - this.x, body.z - this.z);
+      this.afterCollision();
+      if (!body.moving) {
+        this.progress = this.circuit.nearest(body);
+        const base = this.circuit.at(this.progress), yaw = this.circuit.headingAt(this.progress);
+        this.offset = (body.x - base.x) * Math.cos(yaw) - (body.z - base.z) * Math.sin(yaw);
+        this.approachWait = 1.1;
+        this.recovering = false;
+      }
+      return;
+    }
     if (this.gesturing && (this.gesture === 'protest' || this.gesture === 'startle')) {
       this.lineAge += dt;
       this.speed = 0;

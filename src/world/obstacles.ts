@@ -67,7 +67,7 @@ export class Obstacles {
     return this.list.filter((o) => o.role === role);
   }
 
-  private near(x: number, z: number, r: number, cb: (o: Obstacle) => void): void {
+  forEachNear(x: number, z: number, r: number, cb: (o: Obstacle) => void): void {
     const seen = new Set<number>();
     for (let ix = Math.floor((x - r) / CELL); ix <= Math.floor((x + r) / CELL); ix++) {
       for (let iz = Math.floor((z - r) / CELL); iz <= Math.floor((z + r) / CELL); iz++) {
@@ -85,7 +85,7 @@ export class Obstacles {
   /** True if a disc of radius r at (x, z) overlaps any enabled obstacle. */
   blocked(x: number, z: number, r: number): boolean {
     let hit = false;
-    this.near(x, z, r, (o) => {
+    this.forEachNear(x, z, r, (o) => {
       if (hit) return;
       if (o.kind === 'circle') hit = Math.hypot(x - o.x, z - o.z) < o.r + r;
       else {
@@ -109,7 +109,7 @@ export class Obstacles {
   /** Push a disc out of every obstacle it penetrates. */
   pushOut(x: number, z: number, r: number): PushResult {
     let hit: PropRole | null = null;
-    this.near(x, z, r + 0.5, (o) => {
+    this.forEachNear(x, z, r + 0.5, (o) => {
       if (o.kind === 'circle') {
         const dx = x - o.x;
         const dz = z - o.z;

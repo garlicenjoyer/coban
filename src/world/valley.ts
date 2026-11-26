@@ -16,7 +16,7 @@ import { groveOlives, groveWalls, houseProps, hutRuinProps, penProps, ruinProps,
 import type { Decor, Label, Layout, MapDef, MapProps, Prop, Sketcher, V2 } from './mapTypes';
 import { fbm, rng } from './noise';
 import { Surface, Terrain } from './terrain';
-import { CAFE, CAFE_TABLES, COURTYARD_TREES, FOUNTAIN, LAUNDRY, MEMORIAL, MINARET, SQUARE_ENTRANCE, SQUARE_TREE, VILLAGE_BUILDINGS, cafePoint } from './villagePlan';
+import { CAFE, CAFE_TABLES, COURTYARD_TREES, FOUNTAIN, LAUNDRY, MEMORIAL, MINARET, SQUARE_ENTRANCE, SQUARE_TREE, VILLAGE_BUILDINGS, onVillagePaving, cafePoint } from './villagePlan';
 import { VALLEY_ERRANDS } from '../life/valleyErrands';
 
 export const VALLEY_SIZE = 1200;
@@ -435,6 +435,7 @@ export function buildTerrain(): Terrain {
       if (mainRoadDistance(x, z) < ROAD_HALF.main) s = Surface.Gravel;
       if (hillRoadDistance(x, z) < ROAD_HALF.hill) s = Surface.Dirt;
       if (Math.abs(x - V.x) < SQUARE.hx && Math.abs(z - V.z) < SQUARE.hz) s = Surface.Dirt;
+      if (onVillagePaving(V, x, z)) s = Surface.Asphalt;
       t.surfaces[t.idx(ix, iz)] = s;
     }
   }
