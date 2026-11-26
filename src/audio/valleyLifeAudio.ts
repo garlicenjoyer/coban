@@ -117,13 +117,15 @@ export class ValleyLifeAudio {
     const { ctx } = bus;
     const t = ctx.currentTime;
     for (const resident of residents.list) {
-      if (!resident.tractor) continue;
-      const near = Math.hypot(resident.x - listener.x, resident.z - listener.z) < 84;
-      const running = near && !paused && !resident.parked && this.audio.volume > 0;
+      if (!resident.driving && !resident.vehicle) continue;
+      const vehicle = resident.vehicle ?? resident;
+      const speed = Math.abs(vehicle.speed);
+      const near = Math.hypot(vehicle.x - listener.x, vehicle.z - listener.z) < 84;
+      const running = near && !paused && (resident.vehicle ? resident.vehicle.occupied : !resident.parked && !resident.down) && this.audio.volume > 0;
       let engine = this.engines.get(resident.id);
       if (!engine && !running) continue;
       if (!engine) {
-        const pan = spatial(bus, resident, 6.2);
+        const pan = spatial(bus, vehicle, 6.2);
         const level = ctx.createGain();
         level.gain.value = 0;
         const filter = ctx.createBiquadFilter();
@@ -141,14 +143,14 @@ export class ValleyLifeAudio {
         engine = { pan, level, filter, crank, firing };
         this.engines.set(resident.id, engine);
       }
-      engine.level.gain.setTargetAtTime(running ? 0.08 + resident.speed * 0.013 : 0, t, 0.08);
+      engine.level.gain.setTargetAtTime(running ? 0.065 + Math.min(speed, 12) * 0.012 : 0, t, 0.08);
       if (!running) continue;
-      position(engine.pan, resident, 0.95);
-      const idle = resident.id === 'emre' ? 21 : 24;
-      const chop = idle + resident.speed * 3.9 + Math.sin(t * 12) * 0.37;
+      position(engine.pan, vehicle, 0.95);
+      const idle = resident.vehicleKind === 'car' ? 38 : resident.vehicleKind === 'van' ? 29 : resident.id === 'emre' ? 21 : 24;
+      const chop = idle + speed * 3.9 + Math.sin(t * 12) * 0.37;
       engine.crank.frequency.setTargetAtTime(chop, t, 0.08);
       engine.firing.frequency.setTargetAtTime(chop * 2.016, t, 0.08);
-      engine.filter.frequency.setTargetAtTime(125 + resident.speed * 49, t, 0.1);
+      engine.filter.frequency.setTargetAtTime(125 + speed * 49, t, 0.1);
     }
   }
 }

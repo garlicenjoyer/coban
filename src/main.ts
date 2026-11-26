@@ -1,3 +1,4 @@
+import { Ragdolls } from './life/ragdolls';
 // Bootstraps the greybox: physics, simulation, renderer, fixed-step loop, debug tools.
 
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -22,7 +23,6 @@ import { BikeDash } from './ui/bikeDash';
 import { WolfView } from './predators/wolfView';
 import { TaskCard } from './ui/taskCard';
 import { FieldKit } from './ui/fieldKit';
-import { NoteView } from './ui/noteView';
 import { PaperMap } from './ui/paperMap';
 import { WhistleWheel } from './ui/whistleWheel';
 import { FlockView } from './flock/flockView';
@@ -47,7 +47,6 @@ import { GroundDressing } from './world/groundDressing';
 import { HouseView } from './world/houseView';
 import { EconomyView } from './world/economyView';
 import { HomesteadView } from './world/homesteadView';
-import { NotesView } from './world/notesView';
 import { TracksView } from './world/tracksView';
 import { WaterView } from './world/waterView';
 import { WorksView } from './world/worksView';
@@ -60,7 +59,6 @@ import { onVillagePaving } from './world/villagePlan';
 import { HerdingCues, herdingCueSettings } from './world/herdingCues';
 import { Coach } from './tutorial/coach';
 import { CoachView } from './ui/coachView';
-import { TitleScreen } from './ui/titleScreen';
 import { LifeView } from './life/lifeView';
 import { ErrandsView } from './life/errandsView';
 import { ResidentDialogueView } from './ui/residentDialogueView';
@@ -160,7 +158,6 @@ async function main() {
   // Wild herbs and finds, the milking stand and churn.
   const economyView = new EconomyView(sim.terrain, valleyProps, fieldProps);
   scene.add(economyView.root);
-  scene.add(new NotesView(sim.terrain, sim.map).root);
   // Read the land (hold G / D-pad ←): hazards baked once, re-baked when a cistern is built.
   terrainView.bakeHazards(sim.obstacles, sim.water.points);
   sim.events.on('built', (e) => {
@@ -198,6 +195,30 @@ async function main() {
 
   // Sound: whistles from the shepherd, barks from where the dog is.
   const audio = new GameAudio();
+  const ragdolls = new Ragdolls(sim, () => [...lifeView.people, ...(villageLife?.people ?? [])],
+    point => audio.thud(point.x, point.y, point.z));
+  const sprintGate = new THREE.Group();
+  const canvasFlag = document.createElement('canvas');
+  canvasFlag.width = 64; canvasFlag.height = 32;
+  const ink = canvasFlag.getContext('2d')!;
+  for (let row = 0; row < 2; row++) for (let col = 0; col < 4; col++) {
+    ink.fillStyle = (row + col) % 2 ? '#553e28' : '#ffc960';
+    ink.fillRect(col * 16, row * 16, 16, 16);
+  }
+  const flagTexture = new THREE.CanvasTexture(canvasFlag);
+  flagTexture.colorSpace = THREE.SRGBColorSpace;
+  flagTexture.magFilter = THREE.NearestFilter;
+  const flag = new THREE.MeshBasicMaterial({ map: flagTexture, side: THREE.DoubleSide });
+  const pole = new THREE.MeshStandardMaterial({ color: 0xcfa253 });
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.08, 2.8, 8), pole);
+    post.position.set(side * 3.3, 1.4, 0);
+    const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.94, 0.47), flag);
+    cloth.position.set(-side * 0.47, 1.05, 0);
+    post.add(cloth);
+    sprintGate.add(post);
+  }
+  scene.add(sprintGate);
   const lifeAudio = new ValleyLifeAudio(audio);
   const residentVoice = new ResidentVoiceAudio(audio);
   // The land's own sound: cicadas, crickets, the owl, sheep bells, the ezan from the village.
@@ -217,7 +238,7 @@ async function main() {
   });
   const atBike = (kind: 'kick' | 'kickFail' | 'thunk' | 'horn', strength = 1) => audio.bikeSound(kind, strength, sim.bike.x, sim.bike.y + 0.6, sim.bike.z);
   sim.events.on('bikeThunk', (e) => atBike('thunk', e.strength));
-  sim.events.on('bikeHorn', () => atBike('horn'));
+  sim.events.on('bikeHorn', ({ x, z }) => audio.bikeSound('horn', 1, x, groundAt(x, z) + 0.6, z));
   // A misfire pops, a skipping chain clanks.
   sim.events.on('bikeFault', (e) => atBike(e.kind === 'skip' ? 'thunk' : 'kickFail', e.kind === 'skip' ? 0.4 : 0.6));
   const wheel = new WhistleWheel(sim.events, () => 'Karabaş', () => sim.dog.bond);
@@ -226,7 +247,6 @@ async function main() {
   // The field kit: watch (T), compass (with barks and howls), tesbih at the ağıl, paper map (M).
   const fieldKit = new FieldKit(() => sim, sim.events, { tick: () => audio.tick(), bead: () => audio.bead() });
   const paperMap = new PaperMap(() => sim, sim.events);
-  const noteView = new NoteView(() => sim, sim.events);
   const satchel = new SatchelView(() => sim, sim.events, input);
   const shopView = new ShopView(() => sim, sim.events, input);
   // The coach: each control taught when it's first needed, by doing it (Esc › Options).
@@ -262,16 +282,13 @@ async function main() {
     if (e.code !== 'Backquote' || e.repeat) return;
     setDevOverlay(document.body.classList.contains('hudoff'));
   });
-  // The opening (title, Uncle Ahmet's letter, the camera coming down): made once the save
-  // is loaded, at the end of main(). ?notitle skips it.
-  let title: TitleScreen | null = null;
   // Esc / Start: the pause menu, with the controls and options.
   const pause = new PauseMenu({
     input,
-    cardOpen: () => !!title?.isOpen || paperMap.isOpen || shopView.isOpen || noteView.isOpen || satchel.cardOpen
+    cardOpen: () => paperMap.isOpen || shopView.isOpen || satchel.cardOpen
       || taskCard.isJournalOpen || dialogueView.isOpen,
     when: () => {
-      const h = ((sim.hour % 24) + 24) % 24;
+      const h = sim.hour;
       const clock = `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
       return `Day ${sim.tasks.day} · ${clock}`;
     },
@@ -295,6 +312,8 @@ async function main() {
   const playerView = new PlayerView(scene, sim, shepherd, bikeView, stations, fieldProps,
     (success) => atBike(success ? 'kick' : 'kickFail'));
   const rig = new CameraRig(RAPIER, () => sim.world, () => sim.player.collider, groundAt, canvas);
+  sim.events.on('vehicleTaken', at => villageLife?.witnessTheft(at, sim.tick * SIM_DT, sim.obstacles));
+  sim.events.on('residentShout', e => residentVoice.chatter(e, rig.camera.position, e.resident, e.speech));
   sim.events.on('lifeSound', (e) => lifeAudio.call(e.kind, e, rig.camera.position));
   sim.events.on('workSound', (e) => lifeAudio.work(e.kind, e, rig.camera.position));
   const villageSounds: Parameters<VillageLifeView['update']>[5] = {
@@ -379,7 +398,7 @@ async function main() {
       // The whistle wheel slows the world to half speed while it is open.
       // The pause menu stops it altogether.
       pause.update();
-      loop.timeScale = pause.isOpen || title?.holding ? 0 : config.time.timeScale * (input.wheelOpen ? 0.5 : 1);
+      loop.timeScale = pause.isOpen ? 0 : config.time.timeScale * (input.wheelOpen ? 0.5 : 1);
       document.body.classList.toggle('pad', input.lastDevice === 'gamepad');
       // The bottom hint shows only while it's needed: the first seconds, while the mouse
       // has to be clicked to take the camera, or until drag-to-look has been tried once.
@@ -388,14 +407,22 @@ async function main() {
         performance.now() < hintUntil ||
         (!pad && !input.pointerLocked && (input.lockAvailable || !input.looked));
       document.body.classList.toggle('hint-off', !needHint);
+      ragdolls.restoreAnimation();
+      sprintGate.visible = !!sim.sprint;
+      if (sim.sprint) {
+        const marker = sim.sprint.marker;
+        sprintGate.position.set(marker.x, groundAt(marker.x, marker.z), marker.z);
+        sprintGate.rotation.y = -0.5;
+      }
       bikeView.update(alpha, dt * loop.timeScale, playerView.kickstandFold);
       const riding = sim.riding;
       input.riding = riding;
+      document.body.classList.toggle('mounted', riding);
       playerView.update(alpha, dt * loop.timeScale, weightShift);
       bikeDash.update();
       const bk = sim.bike;
       audio.engine(bk.engineOn && !playerView.cranking, bk.rpm, bk.throttle, Math.abs(bk.beta) * 3 + bk.wheelspin + (bk.state === 'fallen' ? 0.3 : 0), bk.x, bk.y + 0.5, bk.z);
-      if (riding) rumble(Math.min(1, Math.abs(bk.beta) * 2 + bk.wheelspin), Math.min(1, bk.speed / 25) * 0.3);
+      if (bk.rider) rumble(Math.min(1, Math.abs(bk.beta) * 2 + bk.wheelspin), Math.min(1, bk.speed / 25) * 0.3);
       perf.lap('shepherd and bike');
       flockView.update(alpha, dt, performance.now() / 1000, dt * loop.timeScale, playerView.milkingSubject);
       herding.update(dt * loop.timeScale, alpha);
@@ -404,13 +431,13 @@ async function main() {
       wolfView.update(alpha, dt * loop.timeScale);
       perf.lap('dog and wolves');
       {
-        const otherCard = shopView.isOpen || noteView.isOpen || satchel.cardOpen || dialogueView.isOpen;
+        const otherCard = shopView.isOpen || satchel.cardOpen || dialogueView.isOpen;
         const cardOpen = paperMap.isOpen || otherCard;
         coach.update({
           sim,
           device: input.lastDevice,
           dt,
-          blocked: pause.isOpen || !!title?.holding || cardOpen || taskCard.isJournalOpen,
+          blocked: pause.isOpen || cardOpen || taskCard.isJournalOpen,
           wheelOpen: input.wheelOpen,
           wheelSlot: input.wheel.slot,
           lastCommand: input.lastCommand,
@@ -426,12 +453,11 @@ async function main() {
       taskCard.update(rig.yaw);
       fieldKit.update(rig.yaw);
       paperMap.update();
-      noteView.update();
       shopView.update();
       economyView.update(sim);
       satchel.watchUp = document.getElementById('watch')?.classList.contains('up') ?? false;
       satchel.update();
-      dialogueView.update(sim.dialogue, pause.isOpen || !!title?.holding || paperMap.isOpen || noteView.isOpen
+      dialogueView.update(sim.dialogue, pause.isOpen || paperMap.isOpen
         || shopView.isOpen || satchel.cardOpen || taskCard.isJournalOpen || input.wheelOpen);
       perf.lap('field kit and cards');
       tracks.update();
@@ -447,9 +473,11 @@ async function main() {
       gateAngle += ((sim.gateOpen ? Math.PI / 2 : 0) - gateAngle) * Math.min(1, dt * 8);
       gatePivot.rotation.y = gateAngle;
       const speaker = dialogueView.isOpen && Math.hypot(sim.player.vel.x, sim.player.vel.z) < 0.25 ? sim.dialogue?.resident : undefined;
-      rig.update(playerView.renderPos, input, dt, sim.riding ? { heading: sim.bike.heading, speed: sim.bike.speed, lean: sim.bike.lean } : null,
-        speaker && { x: speaker.x, y: speaker.y + (speaker.tractor ? 0.24 : 0), z: speaker.z });
-      title?.applyCamera(rig.camera, dt);
+      const vehicleCamera = sim.drivenVehicle ? { heading: sim.drivenVehicle.yaw, speed: Math.abs(sim.drivenVehicle.speed), lean: 0,
+        clearance: sim.drivenVehicle.kind === 'van' ? 1.0 : 0.55 } :
+        sim.bike.rider ? { heading: sim.bike.heading, speed: sim.bike.speed, lean: sim.bike.lean } : null;
+      rig.update(playerView.renderPos, input, dt, vehicleCamera,
+        speaker && { x: speaker.x, y: speaker.y + (speaker.driving ? 0.24 : 0), z: speaker.z });
       perf.lap('camera');
 
       if (colliderLines.visible) {
@@ -479,6 +507,7 @@ async function main() {
       daylight.update(sim.hour, sim.tasks.day, playerView.renderPos, cam.position);
       villageView?.update(sim.hour, sim.tasks.day, cam.position);
       villageLife?.update(sim.hour, (sim.tick + alpha) * SIM_DT, dt * loop.timeScale, sim.player.pos, cam.position, villageSounds);
+      ragdolls.pose();
       updateWind(performance.now() / 1000, dt, sim.hour);
       labels.visible = config.debug.showLabels;
       perf.lap('daylight');
@@ -494,7 +523,7 @@ async function main() {
         add(sim.bike.x, sim.bike.z, 1.1);
         for (const resident of sim.residents.list) {
           if (Math.hypot(resident.x - cam.position.x, resident.z - cam.position.z) < 48)
-            add(resident.x, resident.z, resident.tractor ? 1.2 : 0.52);
+            add(resident.x, resident.z, resident.driving ? 1.2 : 0.52);
         }
         for (const sh of sim.flock.sheep) add(sh.x, sh.z, 0.6);
         grass.update(cam, pushers.slice(0, n), terrainView.grassMap.value !== null);
@@ -535,25 +564,21 @@ async function main() {
   perfFolder.add(benchCtl, 'status').name('result').listen().disable();
   perfFolder.close();
 
-  // ---------- saving (6b): at every dawn; loaded on start unless ?new ----------
+  // Import the existing world once. Free roam checkpoints use a separate slot per map.
+  const roamSaveKey = `coban.roam.v1.${mapId}`;
   const writeSave = (why: string, midday = false) => {
     try {
       const data = snapshot(sim, { midday });
-      localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+      localStorage.setItem(roamSaveKey, JSON.stringify(data));
       saveCtl.status = `saved day ${data.day} (${why}) · ${new Date().toLocaleTimeString()}`;
     } catch (err) {
       saveCtl.status = `could not save: ${err instanceof Error ? err.message : String(err)}`;
     }
   };
   const saveCtl = { status: 'no save yet' };
-  sim.events.on('slept', () => writeSave('dawn'));
-  // Checkpoints inside the day, so a first Day 1 cut short isn't lost: after every task,
-  // and whenever the page is hidden or closed. (The dawn save still writes a clean morning.)
-  sim.events.on('taskDone', () => {
-    // taskDone fires before the list moves on to the next task: save once the step is over.
-    queueMicrotask(() => {
-      if (canCheckpoint(sim)) writeSave('after a task', true);
-    });
+  sim.events.on('slept', () => writeSave('morning', true));
+  sim.events.on('sprintUpdate', () => {
+    if (!sim.sprint?.running) queueMicrotask(() => writeSave('after a sprint', true));
   });
   sim.events.on('errandChanged', ({ title }) => {
     queueMicrotask(() => {
@@ -561,26 +586,23 @@ async function main() {
     });
   });
   const leaving = () => {
-    if (canCheckpoint(sim) && sim.tick > 60 * 20) writeSave('on leaving', true);
+    if (trial.phase === 'off' && scenarios.name === 'none' && canCheckpoint(sim) && sim.tick > 0) writeSave('on leaving', true);
   };
   window.addEventListener('pagehide', leaving);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') leaving();
   });
   const saveFolder = debug.gui.addFolder('Save');
-  saveFolder.add({ save: () => writeSave('by hand') }, 'save').name('Save now');
-  saveFolder.add({ fresh: () => { try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ } location.search = '?new'; } }, 'fresh').name('New game (forget the save)');
+  saveFolder.add({ save: () => writeSave('by hand', true) }, 'save').name('Save now');
+  saveFolder.add({ fresh: () => { try { localStorage.removeItem(roamSaveKey); } catch { /* ignore */ } params.set('new', ''); location.search = params.toString(); } }, 'fresh').name('New game (forget the save)');
   saveFolder.add(saveCtl, 'status').name('save').listen().disable();
   saveFolder.close();
-  let resumed: { day: number; clock: string } | null = null;
   if (!params.has('new')) {
     try {
-      const raw = localStorage.getItem(SAVE_KEY);
+      const raw = localStorage.getItem(roamSaveKey) ?? localStorage.getItem(SAVE_KEY);
       const data = raw ? JSON.parse(raw) : null;
       if (usable(data)) {
         sim.restore(data);
-        const h = ((sim.hour % 24) + 24) % 24;
-        resumed = { day: sim.tasks.day, clock: `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}` };
         saveCtl.status = `loaded day ${data.day} (saved ${new Date(data.savedAt).toLocaleString()})`;
       }
     } catch (err) {
@@ -588,22 +610,11 @@ async function main() {
     }
   }
 
-  if (!params.has('notitle')) {
-    title = new TitleScreen({
-      canvas,
-      groundAt,
-      resumed,
-      readLetter: () => sim.notesRead.add('letter'),
-      newGame: () => {
-        try {
-          localStorage.removeItem(SAVE_KEY);
-        } catch {
-          /* ignore */
-        }
-        location.search = '?new';
-      },
-      onPlay: () => input.releaseAll(),
-    });
+  if (params.has('new')) {
+    writeSave('new valley', true);
+    const url = new URL(location.href);
+    url.searchParams.delete('new');
+    history.replaceState(null, '', url);
   }
 
   // Handy in the browser console while tuning.

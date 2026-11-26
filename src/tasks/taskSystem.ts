@@ -60,7 +60,7 @@ export class TaskSystem {
     private sim: Sim,
     readonly tasks: TaskDef[],
     /** Which day this is (1, 2, …). */
-    readonly day = 1,
+    public day = 1,
   ) {
     const ev = sim.events;
     const count = (k: string) => () => (this.counters[k] = (this.counters[k] ?? 0) + 1);

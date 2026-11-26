@@ -1,3 +1,5 @@
+import type { ResidentId } from '../world/mapTypes';
+import type { VehicleParking } from '../life/roadVehicle';
 // Saving (GDD feature 6, slice 6b): the game saves itself at every dawn, so a week of days
 // need not be one sitting. A save holds what outlives a day: the purse and supplies, the
 // flock (who is left, how they are, where they slept), Karabaş and his care, the bike and
@@ -18,6 +20,10 @@ export const SAVE_KEY = 'coban.save.v1';
 export const SAVE_VERSION = 1;
 
 export interface SaveData {
+  sprintBest?: number;
+  vehicles?: Partial<Record<ResidentId, VehicleParking>>;
+  /** Older free-roam checkpoints. */
+  tractors?: Partial<Record<ResidentId, VehicleParking>>;
   v: number;
   map: string;
   savedAt: string;
@@ -98,6 +104,7 @@ export function snapshot(sim: Sim, opts: { midday?: boolean } = {}): SaveData {
   const e = sim.economy;
   const d = sim.dog;
   const b = sim.bike;
+  const player = b.rider ? sim.bikeExit : sim.drivenVehicle?.beside() ?? sim.player.pos;
   return {
     v: SAVE_VERSION,
     map: activeMap().id,
@@ -105,7 +112,12 @@ export function snapshot(sim: Sim, opts: { midday?: boolean } = {}): SaveData {
     day: sim.tasks.day,
     sleptAt: sim.sleptAt,
     gateOpen: sim.gateOpen,
-    player: { x: round(sim.player.pos.x), z: round(sim.player.pos.z) },
+    player: { x: round(player.x), z: round(player.z) },
+    sprintBest: sim.sprint?.best,
+    vehicles: Object.fromEntries(sim.residents.list.filter(r => r.vehicle).map(r => {
+      const { x, z, yaw } = r.vehicle!;
+      return [r.id, { x, z, yaw }];
+    })),
     economy: {
       lira: e.lira,
       herbs: { ...e.herbs },
@@ -182,7 +194,7 @@ export function usable(data: unknown): data is SaveData {
 
 /** Keep daytime checkpoints, including errand progress after the main tasks when requested. */
 export function canCheckpoint(sim: Sim, options: { afterDayTasks?: boolean } = {}): boolean {
-  return sim.tasks.enabled && (options.afterDayTasks || !sim.tasks.finished) && !sim.nightWatchActive && sim.hour < SUNSET_HOUR + 0.5;
+  return sim.freeRoam || sim.tasks.enabled && (options.afterDayTasks || !sim.tasks.finished) && !sim.nightWatchActive && sim.hour < SUNSET_HOUR + 0.5;
 }
 
 export { pack as packGrass, unpack as unpackGrass };

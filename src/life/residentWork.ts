@@ -15,8 +15,9 @@ const beats: Record<keyof typeof workCycle, readonly Beat[]> = {
 };
 
 export function workSounds(id: ResidentId, pose: WorkPose, from: number, to: number): readonly WorkSound[] {
-  const cycle = pose === 'check' ? id : pose;
-  if (cycle === 'ayse' || cycle === 'hasan' || to <= from) return [];
+  if (to <= from) return [];
+  const cycle = pose === 'check' ? (id === 'emre' || id === 'zeynep' ? id : undefined) : pose;
+  if (!cycle) return [];
   const length = workCycle[cycle];
   return beats[cycle].filter(([second]) => Math.floor((from - second) / length) < Math.floor((to - second) / length))
     .map(([, sound]) => sound);

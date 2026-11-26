@@ -1,5 +1,5 @@
 import { MathUtils } from 'three';
-import type { ResidentId } from '../world/mapTypes';
+import { residentVoice, type ResidentId, type ResidentVoice } from '../world/mapTypes';
 import type { ResidentGesture } from './dialogue';
 import { workCycle, type WorkPose } from './residentWork';
 
@@ -38,7 +38,7 @@ function sample(clip: Clip, time: number, loop = false): GesturePose {
   return blended;
 }
 
-const welcome: Record<ResidentId, Clip> = {
+const welcome: Record<ResidentVoice, Clip> = {
   ayse: [
     [0, {}], [0.27, { right: -0.47, rightOut: 0.88, rightBend: -0.91, nod: 0.10, tilt: -0.04 }],
     [0.48, { right: -0.65, rightOut: 1.28, rightBend: -1.24, wrist: 0.40, nod: -0.06 }],
@@ -63,7 +63,7 @@ const welcome: Record<ResidentId, Clip> = {
   ],
 };
 
-const explain: Record<ResidentId, Clip> = {
+const explain: Record<ResidentVoice, Clip> = {
   ayse: [
     [0, {}], [0.28, { bow: 0.08, right: -0.56, rightBend: -0.88, left: -0.38, leftBend: -0.62 }],
     [0.72, { twist: -0.16, right: -0.73, rightOut: 0.52, rightBend: -0.42, left: -0.62, leftOut: 0.42, leftBend: -0.54, nod: 0.12 }],
@@ -137,11 +137,25 @@ const check: Record<'emre' | 'zeynep', Clip> = {
   ],
 };
 
+const protest: Clip = [
+  [0, {}], [0.22, { bow: -0.17, left: -0.8, leftOut: 0.6, right: -1.7, rightOut: 0.32, release: 1 }],
+  [0.7, { left: -0.7, leftOut: 0.7, right: -2.2, rightBend: -0.65, tilt: 0.16, release: 1 }],
+  [1.45, { bow: 0.17, leftOut: 0.45, right: -1.5, rightOut: 0.3, release: 1 }],
+  [2.25, { right: -2, rightBend: -0.8, left: -1, leftOut: 0.42, release: 1 }],
+  [3.4, { right: -1.5, tilt: -0.14, release: 1 }], [4.2, {}],
+];
+const startle: Clip = [
+  [0, {}], [0.18, { bow: -0.23, left: -0.80, leftBend: -1.0, right: -1.1, rightBend: -0.9, release: 1 }],
+  [0.68, { bow: -0.12, right: -1.55, rightOut: 0.24, leftOut: 0.41, release: 1 }],
+  [1.8, { right: -1.44, tilt: 0.14, release: 1 }], [2.6, {}],
+];
+
 export function residentGesture(id: ResidentId, cue: ResidentGesture, age: number): GesturePose {
-  if (cue === 'greet') return sample(welcome[id], age);
-  if (cue === 'thank') return sample(welcome[id], age * 1.20);
-  if (cue === 'farewell') return sample(welcome[id], age * 1.85);
-  return sample(explain[id], age * (cue === 'offer' ? 0.84 : 1));
+  if (cue === 'protest' || cue === 'startle') return sample(cue === 'protest' ? protest : startle, age);
+  if (cue === 'greet') return sample(welcome[residentVoice[id]], age);
+  if (cue === 'thank') return sample(welcome[residentVoice[id]], age * 1.20);
+  if (cue === 'farewell') return sample(welcome[residentVoice[id]], age * 1.85);
+  return sample(explain[residentVoice[id]], age * (cue === 'offer' ? 0.84 : 1));
 }
 
 export function residentWork(id: ResidentId, work: WorkPose, elapsed: number): GesturePose {
@@ -151,10 +165,10 @@ export function residentWork(id: ResidentId, work: WorkPose, elapsed: number): G
   return id === 'emre' || id === 'zeynep' ? sample(check[id], elapsed, true) : {};
 }
 
-const blinkPeriod: Record<ResidentId, number> = { ayse: 4.4, hasan: 5.3, emre: 3.9, zeynep: 4.8 };
+const blinkPeriod: Record<ResidentVoice, number> = { ayse: 4.4, hasan: 5.3, emre: 3.9, zeynep: 4.8 };
 
 export function residentFace(id: ResidentId, time: number, lineAge: number, speaking: boolean): { eyes: number; mouth: number } {
-  const cycle = ((time + blinkPeriod[id] * 0.57) % blinkPeriod[id]);
+  const cycle = ((time + blinkPeriod[residentVoice[id]] * 0.57) % blinkPeriod[residentVoice[id]]);
   const blink = smoothstep(cycle, 0, 0.058) * (1 - smoothstep(cycle, 0.073, 0.183));
   const rhythm = speaking ? Math.sin(lineAge * 22) * 0.23 + Math.sin(lineAge * 13.2 + 0.3) * 0.35 : 0;
   return { eyes: lerp(1, 0.07, blink), mouth: speaking ? smoothstep(lineAge, 0, 0.16) * Math.max(0.05, 0.35 + rhythm) : 0.04 };

@@ -56,44 +56,6 @@ export class DebugUI {
     this.prompt = document.getElementById('prompt')!;
     const g = this.gui;
 
-    const tk = g.addFolder('Day tasks');
-    tk.add(
-      {
-        go: () => {
-          sim.reset();
-          sim.tasks.enabled = true;
-          scenarios.stop();
-          trial.stop();
-        },
-      },
-      'go',
-    ).name('↺ Restart Day 1');
-    tk.add(
-      {
-        go: () => {
-          sim.startDay(2);
-          scenarios.stop();
-          trial.stop();
-        },
-      },
-      'go',
-    ).name('▶ Start Day 2 (motorcycle)');
-    tk.add({
-      go: () => {
-        sim.startDay(3);
-        scenarios.stop();
-        trial.stop();
-      },
-    }, 'go').name('▶ Start Day 3 (water)');
-    tk.add({
-      go: () => {
-        sim.startDay(4);
-        scenarios.stop();
-        trial.stop();
-      },
-    }, 'go').name('▶ Start Day 4 (far pasture)');
-    tk.add({ go: () => sim.tasks.skip() }, 'go').name('⏭ Skip current task');
-
     const sc = g.addFolder('Kangal tests (M3)');
     sc.add({ go: () => scenarios.gather() }, 'go').name('▶ Gather: scattered flock, < 30 s');
     sc.add({ go: () => scenarios.holdTest() }, 'go').name('▶ Hold: walk 100 m away, 3 min');
@@ -333,18 +295,24 @@ export class DebugUI {
           ? `R — pour a can, ${CAN_LITERS} L (${bk.waterCans} left)`
           : '';
     const site = !bk.rider ? sim.works.siteNear(p.pos.x, p.pos.z) : null;
-    const note = !bk.rider ? sim.noteNear(p.pos.x, p.pos.z) : null;
-    if (sim.brewing > 0) prompt = 'Brewing çay… the flock settles';
+    const key = info.device === 'gamepad' ? 'B' : 'Y';
+    const owner = sim.vehicleNear;
+    const start = sim.sprint?.atStart(p.pos);
+    const horn = info.device === 'gamepad' ? 'B' : 'H';
+    if (sim.drivenVehicle) prompt = start ? `${horn} — start village sprint` :
+      info.device === 'gamepad' ? 'RT / LT — drive / reverse · hold A — get off' : 'W / S — drive / reverse · A / D — steer · E — get off';
+    else if (owner) prompt = `${key} — ${owner.vehicle ? 'drive' : 'steal'} ${owner.profile.model.toLowerCase()}${owner.driving && owner.canTalk(p.pos) ? (info.device === 'gamepad' ? ' · A — talk' : ' · E — talk') : ''}`;
+    else if (bk.rider && start && bk.engineOn) prompt = `${horn} — start village sprint`;
+    else if (sim.brewing > 0) prompt = 'Brewing çay… the flock settles';
     else if (sim.hushing) prompt = 'Hush… the flock stands still and quiet';
     else if (site)
       prompt = `Hold E — ${site.repair ? 'mend' : 'build'} ${site.name} (${site.hours} hours of work)${site.progress > 0 ? ` · ${Math.round(site.progress * 100)}%` : ''}`;
     else if (sim.works.cairnProgress > 0) prompt = 'Stacking a cairn…';
     else if (sim.works.nearHutDoor(p.pos.x, p.pos.z))
-      prompt = sim.tasks.finished ? 'E — sleep at the hut, beside the fold' : 'The hut. Sleep here once the day’s work is done';
+      prompt = 'E — rest at the hut';
     // Riding: only what the moment needs (horn, lamp and weight shift live in Esc › Controls).
     else if (bk.rider) prompt = !bk.engineOn ? 'Space — kick-start (in the green)' : Math.abs(bk.speed) < 0.5 ? 'E — get off' : '';
     else if (sim.nearGate(p.pos.x, p.pos.z)) prompt = `E — ${sim.gateOpen ? 'close' : 'open'} the gate`;
-    else if (note && !sim.notesRead.has(note.id)) prompt = `E — read ${note.where}`;
     else if (sim.shopNear(p.pos.x, p.pos.z)) {
       const s = SHOPS[sim.shopNear(p.pos.x, p.pos.z)!.id];
       prompt = `E — ${s.keeper} · ${s.name}`;
@@ -358,9 +326,7 @@ export class DebugUI {
     else if (sim.milkingNow || sim.canMilk(p.pos.x, p.pos.z))
       prompt = `Hold E — milk the ewes (about ${Economy.milkYield(sim.sheepInPen, sim.economy.milkQuality)} L)${sim.economy.milking > 0 ? ` ${Math.round(sim.economy.milking * 100)}%` : ''}`;
     else if (sim.nearDoor(p.pos.x, p.pos.z)) {
-      if (!sim.tasks.finished) prompt = 'Home. Rest here when the day’s work is done';
-      else if (sim.firstNightPending) prompt = 'E — rest until dark';
-      else if (!sim.nightWatchActive) prompt = 'E — sleep until morning';
+      prompt = 'E — sleep until morning';
     } else if (sim.nearBike(p.pos.x, p.pos.z) && bk.state === 'fallen')
       prompt = `Hold E — lift the bike${bk.liftProgress > 0 ? ` ${Math.round((bk.liftProgress / config.bike.liftSeconds) * 100)}%` : ''}`;
     else if (sim.nearBike(p.pos.x, p.pos.z)) {
@@ -368,7 +334,8 @@ export class DebugUI {
       const job = bk.state === 'parked' ? sim.bikeJob : null;
       if (waterPrompt) prompt = waterPrompt;
       else if (job) prompt = `Hold R — ${job.label} (${job.seconds} s)${bk.care.jobProgress > 0 ? ` ${Math.round((bk.care.jobProgress / job.seconds) * 100)}%` : ''}`;
-      else prompt = 'E — get on the bike';
+      else prompt = 'E — ride your motorcycle';
+      if (waterPrompt || job) prompt = 'E — ride your motorcycle · ' + prompt;
     }
     else {
       const stuck = f.sheep.find(
@@ -387,7 +354,7 @@ export class DebugUI {
       } else if (sim.nearBowl(p.pos.x, p.pos.z)) {
         const care = sim.dog.care;
         prompt = care.bowl.meals > 0 ? 'Karabaş’s bowl is full' : care.sack > 0 ? `E — fill Karabaş’s bowl (${care.sack} meals left in the sack)` : 'The sack of kibble is empty';
-      } else if (note) prompt = 'E — read Uncle Ahmet’s note again';
+      }
     }
     // One prompt at a time. Leading a sheep on the rope is the fallback reminder.
     if (!prompt && waterPrompt) prompt = waterPrompt;

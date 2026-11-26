@@ -1,4 +1,4 @@
-import type { ResidentId } from '../world/mapTypes';
+import { residentVoice, type ResidentId } from '../world/mapTypes';
 import type { ResidentGesture } from './dialogue';
 
 export const residentVoices = {
@@ -27,7 +27,7 @@ export interface ResidentSpeech {
 const vowels: Record<string, Vowel> = { a: 'a', e: 'e', i: 'i', ı: 'u', o: 'o', ö: 'e', u: 'u', ü: 'i' };
 
 export function planResidentSpeech(id: ResidentId, text: string, gesture: ResidentGesture): ResidentSpeech {
-  const voice = residentVoices[id];
+  const voice = residentVoices[residentVoice[id]];
   const tokens = text.match(/[\p{L}\p{N}]+(?:[’'][\p{L}]+)*|[,.!?;:…]/gu) ?? [];
   const syllables: Syllable[] = [];
   let time = 0.025;

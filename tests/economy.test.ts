@@ -1,3 +1,4 @@
+import { campaignDay } from './campaignFixture';
 // Feature 6, slice 6a: the purse and the village. Milk from the morning milking, carried by
 // bike and sold fresh at the dairy; herbs picked in the hills and sold at the bakkal; kibble,
 // fuel and parts bought back; repairs that use up what you bought.
@@ -26,7 +27,7 @@ afterAll(() => useMap(TEST_MAP));
 
 const frame = (over: Partial<InputFrame> = {}): InputFrame => ({ ...emptyFrame(), ...over });
 const newValleySim = () => {
-  const sim = new Sim(RAPIER, terrain);
+  const sim = new Sim(RAPIER, terrain, campaignDay);
   sim.tasks.enabled = false;
   return sim;
 };

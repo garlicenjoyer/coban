@@ -8,10 +8,16 @@ import type { Errand } from '../life/errands';
 import type { Terrain } from './terrain';
 
 export type V2 = { x: number; z: number };
-export type ResidentId = 'emre' | 'zeynep' | 'ayse' | 'hasan';
+export type ResidentVoice = 'emre' | 'zeynep' | 'ayse' | 'hasan';
+export type ResidentId = ResidentVoice | 'deniz' | 'suna' | 'murat' | 'leyla';
+export const residentVoice: Record<ResidentId, ResidentVoice> = {
+  emre: 'emre', zeynep: 'zeynep', ayse: 'ayse', hasan: 'hasan',
+  deniz: 'emre', suna: 'zeynep', murat: 'hasan', leyla: 'ayse',
+};
 
 export interface ValleyRoute {
   resident: ResidentId;
+  circulates?: boolean;
   /** Closed circuit. Stops appear in travel order, starting with the overnight stop. */
   points: V2[];
   stops: readonly ResidentStop[];
@@ -183,35 +189,6 @@ export interface Layout {
   track?: { cx: number; cz: number; rx: number; rz: number; halfWidth: number };
 }
 
-/** One of Uncle Ahmet's notes, left where the shepherd will need it. */
-export interface AhmetNote {
-  id: string;
-  x: number;
-  z: number;
-  /** Where it lies, as the shepherd sees it ("under a stone by the spring"). */
-  where: string;
-  title: string;
-  /** His words. Paragraphs separated by blank lines. */
-  text: string;
-}
-
-/**
- * A mark in Uncle Ahmet's hand on the paper map. Marks without `from` are on the map
- * from the first morning; the rest appear once the note named in `from` has been read.
- */
-export type PencilMark = { id: string; from?: string } & (
-  | { kind: 'route'; pts: V2[] }
-  | { kind: 'text'; x: number; z: number; text: string; rot?: number }
-  | { kind: 'circle'; x: number; z: number; r: number; text?: string }
-  | { kind: 'rect'; xMin: number; xMax: number; zMin: number; zMax: number; text?: string }
-);
-
-/** Pencil marks visible once the given notes have been read. */
-export function visibleMarks(marks: readonly PencilMark[], read: ReadonlySet<string>): PencilMark[] {
-  return marks.filter((m) => !m.from || read.has(m.from));
-}
-
-/** Drawing calls the paper map hands a map so it can sketch its own features. */
 export interface Sketcher {
   g: CanvasRenderingContext2D;
   px: (x: number) => number;
@@ -267,12 +244,8 @@ export interface MapDef {
   goatSpots?: V2[];
   /** Wild herb patches to pick (one bundle a day each). */
   herbs?: { id: string; kind: HerbId; x: number; z: number }[];
-  /** Uncle Ahmet's notes lying in the world (none on the test map). */
-  notes?: AhmetNote[];
   residents?: ValleyRoute[];
   errands?: readonly Errand[];
-  /** His pencil marks on the paper map. */
-  pencil?: PencilMark[];
   /** Relative grass-tuft density, 0..1 (the valley thins it away from the homestead). */
   tuftDensity?(x: number, z: number): number;
 }

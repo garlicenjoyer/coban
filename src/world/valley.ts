@@ -15,7 +15,6 @@
 import { groveOlives, groveWalls, houseProps, hutRuinProps, penProps, ruinProps, stoneWaller, type Grove } from './homestead';
 import type { Decor, Label, Layout, MapDef, MapProps, Prop, Sketcher, V2 } from './mapTypes';
 import { fbm, rng } from './noise';
-import { valleyNotes } from './valleyNotes';
 import { Surface, Terrain } from './terrain';
 import { CAFE, CAFE_TABLES, COURTYARD_TREES, FOUNTAIN, LAUNDRY, MEMORIAL, MINARET, SQUARE_ENTRANCE, SQUARE_TREE, VILLAGE_BUILDINGS, cafePoint } from './villagePlan';
 import { VALLEY_ERRANDS } from '../life/valleyErrands';
@@ -173,9 +172,6 @@ const AHMET_ROUTES: V2[][] = [
 ];
 
 const ROAD_HALF = { main: 3, hill: 2.6 };
-
-/** Uncle Ahmet's notes and pencil marks (positions from the layout above). */
-const AHMET = valleyNotes({ layout: L, routes: AHMET_ROUTES, ford: { x: -247, z: 252 } });
 
 // ---------- geometry helpers ----------
 
@@ -484,8 +480,7 @@ export function buildProps(t: Terrain): MapProps {
     L.pastures.every((pa) => Math.hypot(x - pa.x, z - pa.z) > pa.r + pad + 4) &&
     L.springs.every((sp) => Math.hypot(x - sp.x, z - sp.z) > sp.radius + pad + 3) &&
     Math.hypot(x - MUD.x, z - MUD.z) > MUD.r + 4 &&
-    Math.hypot(x - L.hill.x, z - L.hill.z) > L.hill.plateau + 2 &&
-    AHMET.notes.every((n) => Math.hypot(x - n.x, z - n.z) > pad + 3);
+    Math.hypot(x - L.hill.x, z - L.hill.z) > L.hill.plateau + 2;
 
   // Uncle Ahmet's cairns along his old routes, every ~45 m.
   for (const route of AHMET_ROUTES) {
@@ -689,6 +684,13 @@ function sketch(s: Sketcher): void {
 
 // ---------- map definition ----------
 
+// A clockwise loop from the west side of the square, past the houses and back down the upper lane.
+const villageTrafficCircuit = [
+  [-13, -2], [-16, -7], [-19, -15], [-12, -17], [-6.8, -17], [-6, -23], [-3, -28], [0, -36],
+  [13, -37.6], [26, -37.4], [36, -32], [46, -25], [50, -19], [41, -19], [34, -20], [22, -17],
+  [12, -15], [0, -17], [-5.3, -16], [-7.7, -11], [-6, -8], [-6, -4], [-10, -2],
+].map(([x, z]) => ({ x: V.x + x, z: V.z + z }));
+
 export const VALLEY_MAP: MapDef = {
   id: 'valley',
   title: 'The valley below Şirince',
@@ -715,7 +717,7 @@ export const VALLEY_MAP: MapDef = {
     'Pen gate': [L.spawn.x, L.spawn.z],
     'Pasture A': [L.pastures[0].x, L.pastures[0].z],
     'Pasture B (far)': [B.x, B.z],
-    "Uncle Ahmet's hut": [L.works.hut.x + L.works.hut.hx + 4, L.works.hut.z + 1],
+    "the hillside hut": [L.works.hut.x + L.works.hut.hx + 4, L.works.hut.z + 1],
     'Pasture C (dry)': [C.x, C.z],
     'Pasture D': [L.pastures[3].x, L.pastures[3].z],
     'Pasture E (forest edge)': [L.pastures[4].x, L.pastures[4].z],
@@ -731,7 +733,6 @@ export const VALLEY_MAP: MapDef = {
     'Wolf ground': [-470, -280],
     'To the flock': [0, 0],
   }),
-  notes: AHMET.notes,
   errands: VALLEY_ERRANDS,
   residents: [
     { resident: 'emre', points: [
@@ -804,8 +805,11 @@ export const VALLEY_MAP: MapDef = {
       { hour: 15.6, point: 12, place: 'the fountain path', activity: 'I take one last walk around the square.' },
       { hour: 17, point: 0, place: 'the north side of the square', activity: 'I’ll open up the square again in the morning.' },
     ] },
+    ...([['deniz', 0], ['suna', 9], ['murat', 6], ['leyla', 15]] as const).map(([resident, point]) => ({
+      resident, circulates: true, points: villageTrafficCircuit,
+      stops: [{ hour: 0, point, place: 'the village lanes', activity: 'I’m driving a loop through the village.' }],
+    })),
   ],
-  pencil: AHMET.pencil,
   goatSpots: [
     { x: L.thornCluster.x + 30, z: L.thornCluster.z - 10 },
     { x: L.pastures[3].x + 45, z: L.pastures[3].z + 30 },

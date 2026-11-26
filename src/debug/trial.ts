@@ -30,6 +30,7 @@ export class Trial {
 
   start(): void {
     this.sim.reset();
+    this.sim.teleport(layout.spawn.x, layout.spawn.z);
     this.sim.tasks.enabled = false; // the timed trial replaces the day's tasks
     this.phase = 'out';
     this.t = 0;

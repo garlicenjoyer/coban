@@ -17,7 +17,7 @@ import { COFFEEHOUSE, MOSQUE } from '../src/world/villagePlan';
 
 const terrain = VALLEY_MAP.buildTerrain();
 const obstacles = new Obstacles(VALLEY_MAP.buildProps(terrain));
-const routes = VALLEY_MAP.residents!;
+const routes = VALLEY_MAP.residents!.filter(route => !route.circulates);
 const distant = { x: 0, y: 0, z: 0 };
 const quiet = { player: distant, rider: false, playerSpeed: 0, bike: distant, dog: distant, sheep: [], hour: 10, honking: false };
 
@@ -53,7 +53,7 @@ describe('valley life', () => {
         expect(resident.destination, resident.id).toBe(stop);
         expect(reached, `${resident.id} at ${stop.place}`).toBe(true);
       }
-      if (resident.tractor) expect(resident.travel, resident.id).toBeCloseTo(road.length, 1);
+      if (resident.driving) expect(resident.travel, resident.id).toBeCloseTo(road.length, 1);
       else expect(resident.travel, resident.id).toBeGreaterThan(road.length + 30);
     }
   });

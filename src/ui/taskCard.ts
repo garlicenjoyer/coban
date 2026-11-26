@@ -1,19 +1,13 @@
-// Task card (a paper note, top left) and journal (J). Shows the current task, how to
-// do it, live progress, and where to go as distance + direction (no world marker).
-
-import { config, DAWN_HOUR, GOLDEN_HOUR, SUNSET_HOUR } from '../core/config';
 import type { EventBus } from '../core/events';
 import type { Sim } from '../sim';
 import { ITEMS, type ItemId } from '../player/satchel';
-import { GOODS, JOBS } from '../economy/economy';
-import { isThursday, season, weekday } from '../economy/calendar';
-import { activeMap, insideFold, layout } from '../world/map';
+import { JOBS } from '../economy/economy';
+import { season, weekday } from '../economy/calendar';
 
 const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
 const ARROWS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
 
 const clock = (h: number) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}`;
-const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 export class TaskCard {
@@ -22,7 +16,6 @@ export class TaskCard {
   private banner: HTMLDivElement;
   private bannerUntil = 0;
   private journalOpen = false;
-  private nightWarned = false;
   private lastHtml = '';
 
   constructor(
@@ -47,41 +40,11 @@ export class TaskCard {
       if (e.code === 'KeyJ') this.setJournal(!this.journalOpen);
       else if (e.code === 'Escape' && this.journalOpen) this.setJournal(false);
     });
-    events.on('taskDone', (e) => {
-      const t = this.sim().tasks.tasks[e.index];
-      this.flash(`✓ ${t.title}`);
-      this.onDone();
+    events.on('sprintUpdate', e => {
+      this.flash(e.text);
+      if (!this.sim().sprint?.running) this.onDone();
     });
-    events.on('dayDone', () => {
-      this.flash(`Day ${this.sim().tasks.day} complete`);
-      this.setJournal(true);
-      this.onDone();
-    });
-    events.on('simReset', () => {
-      this.nightWarned = false;
-    });
-    events.on('goldenHour', () => {
-      if (this.sim().tasks.enabled) this.flash('Golden hour · one hour until sunset');
-    });
-    events.on('restedUntilDark', () => this.setJournal(false));
-    events.on('bark', ({ kind }) => {
-      const sim = this.sim();
-      const wolf = sim.nightWolf;
-      if (this.nightWarned || !wolf || sim.dog.perceived !== wolf || (kind !== 'alert' && kind !== 'warning')) return;
-      this.nightWarned = true;
-      this.setJournal(false);
-      this.flash('Karabaş sounds the alarm');
-    });
-    events.on('slept', (e) => {
-      this.setJournal(false);
-      const r = this.sim().nightReport(e.day - 1);
-      if (!r || (!r.taken && !r.scattered && !r.wounded)) this.flash(`You sleep soundly${r?.sleptAt === 'hut' ? ' at the hut' : ''}. Day ${e.day}`);
-      else
-        this.flash(
-          `Wolves in the night: ${r.taken ? `${r.taken} taken` : 'none taken'}${r.scattered ? `, ${r.scattered} scattered` : ''}${r.wounded ? `, ${r.wounded} bitten` : ''}`,
-          4200,
-        );
-    });
+    events.on('slept', e => this.flash(`Day ${e.day} · morning`));
     // Notebook lines for the journey: what you used, built, found and reached.
     events.on('itemUsed', (e) => this.flash(e.text, e.ok ? 2600 : 2000));
     events.on('packed', (e) => this.flash(`Satchel: ${e.items.map((i) => ITEMS[i as ItemId]?.name.toLowerCase() ?? i).join(', ')}`));
@@ -107,18 +70,7 @@ export class TaskCard {
     events.on('sheared', (e) => this.flash(e.left ? `A fleece off. ${e.left} to go` : 'The whole flock shorn. They look half the size and twice as happy', 2400));
     events.on('found', (e) => this.flash(`You wipe the mud off ${e.name}. The museum would like it; so would the man behind the kahvehane`, 4200));
     events.on('pressed', (e) => this.flash(`${e.wheels} wheel${e.wheels === 1 ? '' : 's'} of white cheese on the shelf (${e.shelf} ageing). Best after three days`, 3600));
-    events.on('slept', () => {
-      const nr = this.sim().nightReport();
-      if (nr?.rain) setTimeout(() => this.flash('It rained hard in the night. Uncle Ahmet said things come up at the ruins after rain', 4200), 3500);
-    });
-    events.on('herbPicked', (e) => this.flash(`A bundle of ${e.name}. The bakkal buys them`, 2200));
-    // The first morning: point at Uncle Ahmet's letter once, if this map has one.
-    setTimeout(() => {
-      if (activeMap().notes?.some((n) => n.id === 'letter') && !this.sim().notesRead.has('letter')) this.flash('A letter waits on the çay table', 3200);
-    }, 6000);
-    events.on('howl', () => {
-      if (this.sim().tasks.enabled) this.flash('Wolves howl in the forest · north-west', 3000);
-    });
+    events.on('herbPicked', e => this.flash(`A bundle of ${e.name}`));
   }
 
   /** The notebook (J) is open. */
@@ -166,132 +118,33 @@ export class TaskCard {
       this.banner.style.transform = 'translate(-50%, -8px) scale(0.96)';
     }
 
-    let html: string;
-    const sun =
-      sim.hour < DAWN_HOUR || sim.hour >= SUNSET_HOUR
-        ? '<span class="sun late">☾ night</span>'
-        : sim.hour >= GOLDEN_HOUR
-          ? `<span class="sun low">☀ golden hour</span>`
-          : `<span class="sun">☀ ${sim.hour < 12 ? 'morning' : sim.hour < 16 ? 'midday' : 'afternoon'}</span>`;
-    // The exact time lives on the pocket watch (hold T); the card only says how the day goes.
-    // Standing key hints (watch, journal) live in Esc › Controls, not on the card.
-    const header = `<div class="hdr"><b>Day ${T.day}</b> ${sun}</div>`;
-    const wolf = T.day === 1 ? sim.nightWolf : null;
-    const watch = sim.nightWatchActive;
-    const lanternHint = 'Light the lantern · <kbd>F</kbd>';
-
-    // Folded at the hut (and not penned at home): the fold is only safe with the shepherd beside it.
-    const total = sim.flock.sheep.length;
-    const folded = sim.works.built('hut') && total > 0 && sim.flock.sheep.every((s) => insideFold(s.x, s.z));
-    const sleepWhere = folded ? 'the hut door (the flock is in the fold)' : `the cottage door${sim.works.built('hut') ? ' or the hut' : ''}`;
-
-    if (!T.enabled) {
-      html = `${header}<div class="paused">Tasks paused while a test runs.<br>Restart a day from the debug panel.</div>`;
-    } else if (T.finished) {
-      const next = watch
-        ? `${this.nightWarned ? 'Karabaş is on guard' : 'Night watch'} · ${lanternHint}`
-        : sim.firstNightPending
-          ? 'Rest until dark · <kbd>E</kbd> at the cottage door'
-          : `${wolf ? 'The wolf has gone. ' : ''}Sleep · <kbd>E</kbd> at ${sleepWhere}`;
-      html = `${header}<div class="title">Day complete ✓</div><div class="how">Done in ${mmss(T.dayDoneAt)}. <kbd>J</kbd> for the summary.</div><div class="next">${next}</div>`;
-    } else {
-      const task = T.task!;
-      const cur = T.current;
-      const next = T.tasks[T.index + 1];
-      html =
-        header +
-        `<div class="num">Task ${T.index + 1} of ${T.tasks.length}</div>` +
-        `<div class="title">${esc(task.title)}</div>` +
-        `<div class="how">${esc(task.how)}</div>` +
-        (cur.progress ? `<div class="prog">${esc(cur.progress)}</div>` : '') +
-        (cur.target ? `<div class="dir">${esc(cur.target.label)}: ${this.where(cur.target.x, cur.target.z, camYaw)}</div>` : '') +
-        (cur.nudge ? `<div class="nudge">${esc(cur.nudge)}</div>` : '') +
-        (next ? `<div class="next">Next: ${esc(next.title)}</div>` : '') +
-        (watch && this.nightWarned ? `<div class="foot">${lanternHint}</div>` : '');
-    }
+    const race = sim.sprint;
+    const active = [...sim.errands.targets()];
+    const current = active[0];
+    const job = sim.economy.job;
+    const html = race?.running
+      ? `<div class="title">Village sprint</div><div class="prog">${race.elapsed.toFixed(1)} s / 90 s</div><div class="dir">${race.marker.label} · ${this.where(race.marker.x, race.marker.z, camYaw)}</div>`
+      : current ? `<div class="title">${esc(current.errand.title)}</div><div class="how">${esc(current.stop.action)}</div><div class="dir">${this.where(current.stop.x, current.stop.z, camYaw)}</div>`
+      : job ? `<div class="title">${esc(JOBS[job.id].title)}</div><div class="how">${esc(JOBS[job.id].ask)}</div>` : '';
+    this.card.hidden = !html;
     if (html !== this.lastHtml) {
       this.card.innerHTML = html;
       this.lastHtml = html;
     }
-
-    if (this.journalOpen) {
-      const rows = T.tasks
-        .map((t, i) => {
-          const rec = T.done.find((d) => d.id === t.id);
-          const cls = rec ? 'done' : i === T.index && T.enabled ? 'cur' : 'todo';
-          const mark = rec ? '✓' : i === T.index ? '→' : '·';
-          return `<li class="${cls}"><span>${mark}</span> ${esc(t.title)}${rec ? `<em>${mmss(rec.doneAt)}</em>` : ''}</li>`;
-        })
-        .join('');
-      const f = sim.flock;
-      const summary = T.finished
-        ? T.day !== 2 || !layout.track
-          ?`<p class="sum">Day complete in ${mmss(T.dayDoneAt)} · strays ${f.strayEvents} · stuck ${f.stuckEvents} · wolf bites ${sim.wolves.bites} · bond with Karabaş ${Math.round(sim.dog.bond)}</p>`
-          : `<p class="sum">Day complete in ${mmss(T.dayDoneAt)} · best lap ${sim.lap.best > 0 ? mmss(sim.lap.best) : '—'} · falls ${sim.bike.falls}</p>`
-        : '';
-      const currentTally = sim.sunsetTally();
-      const tally = currentTally ?? sim.sunsetTally(T.day - 1);
-      const sunset = tally
-        ? `<p class="sum">Day ${currentTally ? T.day : T.day - 1} at ${clock(SUNSET_HOUR)} · ${tally.safe}/${tally.total} sheep safely penned${
-            tally.gateClosed ? ' · gate closed' : ` · ${tally.inPen} inside, gate open`
-          }</p>`
-        : '';
-      const nr = sim.nightReport(T.day - 1);
-      const night = nr
-        ? `<p class="sum">Last night · ${esc(nr.reason)}${nr.taken || nr.scattered ? ` Wolves took ${nr.taken}${nr.scattered ? `; ${nr.scattered} scattered` : ''}.` : ''}${nr.wounded ? ` ${nr.wounded} came back bitten.` : ''}</p>`
-        : '';
-      // The flock as cargo: how they are holding up.
-      const cond = f.sheep.length ? f.sheep.reduce((a, s) => a + s.condition, 0) / f.sheep.length : 0;
-      const limping = f.sheep.filter((s) => s.condition < 50).length;
-      const word = cond >= 80 ? 'good' : cond >= 60 ? 'fair' : 'poor';
-      const flock = `<p class="sum">Flock condition: ${word}${limping ? ` · ${limping} limping` : ''}${sim.dog.wound > 0 ? ' · Karabaş is limping' : ''}</p>`;
-      // Karabaş, in words rather than numbers.
-      const care = sim.dog.care;
-      const dogBits = [
-        care.satiety < config.dogCare.hungry ? 'hungry' : care.satiety < config.dogCare.seekFood ? 'could eat' : 'fed',
-        care.hydration < config.dogCare.thirsty ? 'thirsty' : null,
-        care.ticks ? `${care.ticks} tick${care.ticks > 1 ? 's' : ''}` : null,
-        care.pettedToday ? null : 'not petted today',
-      ].filter(Boolean);
-      const dogLine = `<p class="sum">Karabaş: ${dogBits.join(' · ')}${care.sack <= 3 ? ` · only ${care.sack} meals left in the sack` : ''}${nr?.dog && nr.dog.bondChange < 0 ? ` · ${esc(nr.dog.note)}` : ''}</p>`;
-      const eco = sim.economy;
-      const todayLines = eco.ledger.filter((l) => l.day === T.day);
-      const owned = [...eco.upgrades].map((u) => GOODS.find((g) => g.id === u)?.name.toLowerCase() ?? u);
-      const extras = [
-        nr?.rain ? 'it rained hard in the night' : null,
-        eco.artifacts.length ? `${eco.artifacts.length} find${eco.artifacts.length > 1 ? 's' : ''} from the ruin in your pocket` : null,
-        eco.cheese.length ? `${eco.cheese.length} cheese wheels ageing (${eco.cheese.filter((w) => w.age >= config.economy.cheese.ageDays).length} ready)` : null,
-        owned.length ? `yours: ${owned.join(', ')}` : null,
-      ].filter(Boolean);
-      const purse = `<p class="sum">Purse: ${Math.round(eco.lira)} ₺${todayLines.length ? ` · today ${todayLines.map((l) => `${esc(l.text)} ${l.amount > 0 ? '+' : ''}${l.amount}`).join(', ')}` : ''}${eco.churn ? ` · ${eco.churn} L in the churn` : ''}${eco.rackMilk ? ` · ${eco.rackMilk} L on the bike` : ''}${eco.herbCount ? ` · ${eco.herbCount} bundles of herbs` : ''} · ${eco.patches} tyre patches, ${eco.chainOil} chain oilings, ${sim.bike.care.drum.toFixed(0)} L in the drum${extras.length ? ` · ${esc(extras.join(' · '))}` : ''}</p>`;
-      const kit = `<p class="sum">Satchel: ${sim.satchel.slots.map((sl) => `${ITEMS[sl.id].name.toLowerCase()}${Number.isFinite(sl.uses) ? ` (${sl.uses})` : ''}`).join(', ') || 'empty'}${sim.works.cairns.length ? ` · ${sim.works.cairns.length} cairns stacked` : ''}</p>`;
-      const allNotes = activeMap().notes ?? [];
-      const read = allNotes.filter((n) => sim.notesRead.has(n.id));
-      const notes = allNotes.length
-        ? `<p class="sum">Uncle Ahmet’s notes · ${read.length} of ${allNotes.length}${read.length ? `: ${read.map((n) => esc(n.title)).join(', ')}` : ' · the first is a letter on the çay table'}</p>`
-        : '';
-      const vill = [
-        eco.job ? `errand: ${JOBS[eco.job.id].title}${eco.job.found ? ' (the goat is tied up: tell Kemal)' : ''}` : null,
-        eco.reputation ? `standing in the village ${eco.reputation}${eco.reputation >= 1 ? ` (${Math.round(config.village.reputation.discountPer * Math.min(eco.reputation, config.village.reputation.max) * 100)}% off in the shops)` : ''}` : null,
-        eco.fleeces ? `${eco.fleeces} fleeces to sell` : null,
-        season(T.day) === 'summer' && eco.shornIds.size < f.sheep.length ? `${f.sheep.length - eco.shornIds.size} sheep to shear this summer` : null,
-        isThursday(T.day) ? 'the vet is in the village today' : null,
-        eco.tonic ? 'tonic in their water tonight' : null,
-      ].filter(Boolean);
-      const village = vill.length ? `<p class="sum">${esc(vill.join(' · '))}</p>` : '';
-      const errands = sim.errands.definitions.flatMap((errand) => {
-        const index = sim.errands.status(errand.resident);
-        if (index === undefined) return [];
-        const stop = errand.stops[index];
-        return stop
-          ? [`<li><span>→</span><div><b>${esc(errand.title)}</b> · ${index + 1}/${errand.stops.length}<br>${esc(stop.action[0].toUpperCase() + stop.action.slice(1))} at ${esc(stop.place)} · ${this.where(stop.x, stop.z, camYaw)}</div></li>`]
-          : [`<li class="done"><span>✓</span> ${esc(errand.title)}</li>`];
-      });
-      const optional = errands.length ? `<div class="sum"><b>Optional errands</b><ol>${errands.join('')}</ol></div>` : '';
-      const people = sim.residents.list.length
-        ? `<div class="sum"><b>Around the valley</b><ol>${sim.residents.list.map((r) => `<li>${esc(r.profile.name)} · ${r.settled ? 'at' : 'heading toward'} ${esc(r.destination.place)}</li>`).join('')}</ol></div>`
-        : '';
-      this.journal.innerHTML = `<h2>Shepherd’s notebook — Day ${T.day} · ${weekday(T.day)} · ${season(T.day)}</h2><ol>${rows}</ol>${optional}${people}${summary}${sunset}${night}${flock}${dogLine}${purse}${village}${kit}${notes}<p class="foot">J — close</p>`;
-    }
+    if (!this.journalOpen) return;
+    const rows = sim.errands.definitions.map(errand => {
+      const i = sim.errands.status(errand.resident);
+      const resident = sim.residents.list.find(r => r.id === errand.resident)!;
+      const stop = i === undefined ? undefined : errand.stops[i];
+      const detail = stop ? `${stop.action} · ${this.where(stop.x, stop.z, camYaw)}`
+        : i === undefined ? `Talk to ${resident.profile.name} · ${this.where(resident.x, resident.z, camYaw)}` : 'Completed';
+      return `<li><div><b>${esc(errand.title)}</b><br>${esc(detail)}</div></li>`;
+    }).join('');
+    this.journal.innerHTML = `<h2>Valley activities</h2><ol>${rows}</ol>
+      ${race ? `<p class="sum"><b>Village sprint</b><br>Honk at the gold gate by the village entrance on your motorcycle or in a road vehicle.${race.best ? ` Best · ${race.best.toFixed(1)} s` : ''}</p>` : ''}
+      ${job ? `<p class="sum">${esc(JOBS[job.id].title)} · ${esc(JOBS[job.id].ask)}</p>` : ''}
+      <p class="sum">Your motorcycle · ${this.where(sim.bike.x, sim.bike.z, camYaw)}<br>
+      ${weekday(T.day)} · ${season(T.day)} · ${clock(sim.hour)} · ${Math.round(sim.economy.lira)} ₺</p>
+      <p class="foot">J — close</p>`;
   }
 }

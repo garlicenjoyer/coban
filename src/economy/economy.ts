@@ -24,7 +24,7 @@ export const JOBS: Record<JobId, { title: string; ask: string; done: string }> =
   thyme: {
     title: 'Thyme for Kemal’s tea',
     ask: `My tea wants wild thyme, and my knees won’t climb to it. Bring me ${config.village.jobs.thymeBundles} bundles from the dry hills.`,
-    done: 'Kemal sniffs the bundles and smiles. “Your uncle used to bring me these.”',
+    done: 'Kemal sniffs the bundles and smiles. “Just the thing for the tea.”',
   },
   goat: {
     title: 'Mehmet’s goat',
@@ -52,7 +52,7 @@ export interface Artifact {
 
 /** What the curator tells you, and adds to your map, for each thing you give the museum. */
 export const MUSEUM_LORE = [
-  'This coin came from the old market road. It ran past your uncle’s dry pasture, straight to the cistern the Romans built. I will mark it for you.',
+  'This coin came from the old market road. It ran past the dry pasture, straight to the cistern the Romans built. I will mark it for you.',
   'A lamp like this burned in a shrine. There was a spring in the pines above the ruin, sacred once. It still runs in spring.',
   'Look: a name, and the word for “shepherd”. Someone kept flocks on your hill two thousand years ago. Their fold stood on the lookout’s east shoulder.',
 ];
@@ -88,7 +88,7 @@ export const UPGRADES = new Set<GoodId>(['tickCollar', 'spikedCollar', 'pen', 't
 export const SHOPS: Record<ShopId, { name: string; keeper: string; greeting: string }> = {
   dairy: { name: 'the dairy', keeper: 'Fatma Hanım', greeting: 'Fresh milk only. What turns by evening, I can’t take.' },
   bakkal: { name: 'the bakkal', keeper: 'Hüseyin Efendi', greeting: 'Kibble, flour, oil. And I buy herbs, if they’re dry and clean.' },
-  usta: { name: 'the mechanic', keeper: 'Usta Remzi', greeting: 'Your uncle’s old machine! I know every bolt of her.' },
+  usta: { name: 'the mechanic', keeper: 'Usta Remzi', greeting: 'That old motorcycle! I know every bolt of her.' },
   kahvehane: { name: 'the kıraathane', keeper: 'Kemal', greeting: 'Sit, sit. Çay is coming.' },
   muze: { name: 'the museum', keeper: 'Selim Bey, the curator', greeting: 'Every piece tells me something about this valley. I pay what the ministry allows.' },
   vet: { name: 'the vet’s table', keeper: 'Dr. Aylin, the vet', greeting: 'Thursdays I’m here till evening. Who’s poorly?' },
@@ -101,8 +101,8 @@ export const RUMOURS = [
   'After the last big rain, Mehmet’s boy found a coin in the ruins. Bronze, with a horse on it. The museum man was very pleased.',
   'Fatma Hanım pays more for milk from a flock that ate and drank well. She can taste it, she says.',
   'Usta Remzi says a spark plug wants cleaning every few days on gravel roads. Nobody listens.',
-  'Thyme grows best on the dry hills by your uncle’s pasture without water. Mountain tea only high up, on the lookout.',
-  'Ahmet’s dog was the best on this side of the valley. He won’t eat from a stranger’s hand until he trusts you.',
+  'Thyme grows best on the dry hills by the pasture without water. Mountain tea only high up, on the lookout.',
+  'Karabaş is the best on this side of the valley. He won’t eat from a stranger’s hand until he trusts you.',
 ];
 
 export interface LedgerLine {

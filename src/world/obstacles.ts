@@ -97,6 +97,15 @@ export class Obstacles {
     return hit;
   }
 
+  clearBetween(a: { x: number; z: number }, b: { x: number; z: number }, radius = 0.1): boolean {
+    const dx = b.x - a.x, dz = b.z - a.z;
+    const samples = Math.ceil(Math.hypot(dx, dz) / 0.45);
+    for (let i = 1; i < samples; i++) {
+      if (this.blocked(a.x + dx * i / samples, a.z + dz * i / samples, radius)) return false;
+    }
+    return true;
+  }
+
   /** Push a disc out of every obstacle it penetrates. */
   pushOut(x: number, z: number, r: number): PushResult {
     let hit: PropRole | null = null;

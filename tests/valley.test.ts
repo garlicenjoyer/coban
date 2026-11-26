@@ -215,6 +215,7 @@ function leadTo(sim: Sim, route: V2[], target: V2 & { r: number }, maxHours: num
 describe('the flock in the valley', () => {
   const newValleySim = () => {
     const sim = new Sim(RAPIER, terrain);
+    sim.teleport(L.spawn.x, L.spawn.z);
     sim.tasks.enabled = false;
     return sim;
   };
@@ -252,7 +253,7 @@ describe('the flock in the valley', () => {
     const sim = newValleySim();
     const site = sim.works.site('hut');
     expect(site.repair).toBe(true);
-    expect(site.name).toBe("Uncle Ahmet's hut");
+    expect(site.name).toBe("the hillside hut");
     sim.teleport(site.x, site.z);
     const h0 = sim.hour;
     const built: { id: string; repair?: boolean }[] = [];

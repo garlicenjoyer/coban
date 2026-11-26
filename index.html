@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Çoban — greybox</title>
+    <title>Çoban — Free roam</title>
     <style>
       :root {
         --glass: rgba(26, 21, 16, 0.58);
@@ -56,7 +56,7 @@
       body.locked #hint .unlocked { display: none; }
       body:not(.nolock) #hint .nolock, body.nolock #hint .unlocked { display: none; }
       body.locked:not(.nolock) #hint .nolock { display: none; }
-      body.pad #hint .kb, body:not(.pad) #hint .gp { display: none; }
+      body.mounted #hint .on-foot, body.pad #hint .kb, body:not(.pad) #hint .gp { display: none; }
       body.pad #hint .unlocked, body.pad #hint .nolock { display: none; }
       body.locked #hint, body.pad #hint { opacity: 0.55; }
       body.hint-off #hint { opacity: 0; transform: translate(-50%, 10px); }
@@ -236,21 +236,6 @@
       #papermap canvas { width: 100%; height: auto; display: block; border-radius: 4px; }
       #papermap .hint { margin-top: 6px; text-align: center; font: italic 13px var(--serif); color: #f4efe6; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
       body.mapopen #hint, body.mapopen #prompt { display: none; }
-      #ahmetnote {
-        position: fixed; left: 50%; top: 46%; width: min(380px, calc(100vw - 32px)); padding: 18px 22px 14px;
-        transform: translate(-50%, -44%) rotate(1.4deg) scale(0.96); opacity: 0; pointer-events: none;
-        transition: opacity 0.25s, transform 0.25s; color: #33302c;
-        background: linear-gradient(176deg, #f3ecda, #e8dcbf); border-radius: 3px; box-shadow: 0 10px 28px rgba(0,0,0,0.4);
-        font: 17px/1.45 'Bradley Hand', 'Noteworthy', 'Segoe Print', 'Comic Sans MS', cursive;
-      }
-      #ahmetnote.open { opacity: 1; transform: translate(-50%, -50%) rotate(1.4deg) scale(1); }
-      #ahmetnote .where { font: italic 12px var(--serif); color: #8a7655; }
-      #ahmetnote h3 { margin: 2px 0 8px; font-size: 21px; font-weight: 600; }
-      #ahmetnote p { margin: 0 0 9px; }
-      #ahmetnote .sig { text-align: right; margin-top: -2px; }
-      #ahmetnote .added { margin-top: 10px; padding-top: 7px; border-top: 1px dashed #c7b58e; font: italic 13px var(--serif); color: #5b5145; }
-      #ahmetnote .hint { margin-top: 6px; font: 11px system-ui, sans-serif; color: #9a8866; }
-      body.mapopen #ahmetnote { opacity: 0; }
       #taskcard .watchhint { font-size: 11px; color: #9a8866; }
       #tesbih i.weak { background: #e9dcc0 repeating-linear-gradient(45deg, transparent 0 2px, rgba(150,60,40,0.55) 2px 3px); }
       #tesbih i.in.weak { background: #7a3f1f repeating-linear-gradient(45deg, transparent 0 2px, rgba(240,180,140,0.6) 2px 3px); }
@@ -313,52 +298,6 @@
       #loading::before { content: 'Çoban'; font: 700 44px/1 var(--serif); font-style: normal; letter-spacing: 0.02em; color: var(--paper-ink); }
       #loading::after { content: ''; width: 120px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--leather), transparent) 0 0 / 50% 100% no-repeat, rgba(107,90,64,0.2); animation: load 1.2s ease-in-out infinite; }
       @keyframes load { from { background-position: -60px 0, 0 0; } to { background-position: 180px 0, 0 0; } }
-
-      /* ---------- the opening: title, the letter, then the camera comes down ---------- */
-      body.titling #left, body.titling #hint, body.titling #prompt, body.titling #coach, body.titling #satchel,
-      body.titling #toast, body.titling #taskdone, body.titling #watch, body.titling #compass, body.titling #tesbih { opacity: 0 !important; visibility: hidden; }
-      #title {
-        position: fixed; inset: 0; z-index: 1500; display: flex; align-items: flex-end; justify-content: flex-start;
-        padding: clamp(16px, 6vh, 64px) clamp(16px, 6vw, 88px); box-sizing: border-box;
-        background: linear-gradient(105deg, rgba(24, 19, 14, 0.62) 0%, rgba(24, 19, 14, 0.28) 38%, rgba(24, 19, 14, 0) 62%),
-                    linear-gradient(0deg, rgba(24, 19, 14, 0.45), rgba(24, 19, 14, 0) 45%);
-        opacity: 0; transition: opacity 0.6s;
-      }
-      #title.up { opacity: 1; }
-      #title button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-      #title button:focus { outline: none; }
-      #title button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
-      .tt-card { width: min(440px, 100%); color: var(--cream); }
-      .tt-kicker { font: 650 11.5px var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--cream-dim); }
-      .tt-card h1 { margin: 6px 0 14px; font: 700 clamp(52px, 9vw, 84px)/0.95 var(--serif); letter-spacing: 0.01em; text-shadow: 0 2px 18px rgba(0,0,0,0.35); }
-      .tt-line { margin: 0 0 26px; max-width: 34ch; font: italic 17px/1.45 var(--serif); color: var(--cream); text-wrap: pretty; }
-      .tt-line span { display: block; margin-top: 6px; font: 600 12.5px var(--sans); font-style: normal; color: var(--cream-dim); }
-      .tt-line span::before { content: '— '; }
-      .tt-acts { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; }
-      .tt-acts button, .tt-letter button {
-        display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px;
-        padding: 11px 18px; border-radius: 10px; font: 600 15px var(--sans) !important;
-        background: rgba(246, 240, 228, 0.12); border: 1px solid rgba(246, 240, 228, 0.3); color: var(--cream);
-        backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); transition: background 0.15s, transform 0.15s;
-      }
-      .tt-acts button:hover { background: rgba(246, 240, 228, 0.22); }
-      #title .tt-primary { min-width: 200px; background: var(--leather); border-color: var(--leather-dark); color: var(--paper-1); box-shadow: 0 2px 0 var(--leather-dark), var(--shadow-soft); }
-      #title .tt-primary:hover { background: #9a673f; transform: translateY(-1px); }
-      #title .tt-primary small { font: 500 12px var(--sans); opacity: 0.8; }
-      .tt-foot { margin: 22px 0 0; font: italic 13px var(--serif); color: var(--cream-dim); }
-      .tt-letter {
-        position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(1.2deg);
-        width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 48px); overflow: auto; box-sizing: border-box; padding: 22px 26px 20px;
-        color: #33302c; background: linear-gradient(176deg, #f3ecda, #e8dcbf); border-radius: 3px; box-shadow: 0 14px 40px rgba(0,0,0,0.5);
-        font: 17px/1.45 'Bradley Hand', 'Noteworthy', 'Segoe Print', 'Comic Sans MS', cursive; animation: tt-letter 0.45s cubic-bezier(.2,.8,.3,1);
-      }
-      .tt-letter .where { font: italic 12px var(--serif); color: #8a7655; }
-      .tt-letter h3 { margin: 2px 0 10px; font-size: 22px; font-weight: 600; }
-      .tt-letter p { margin: 0 0 10px; }
-      .tt-letter .sig { text-align: right; margin: -2px 0 16px; }
-      .tt-letter button { width: 100%; align-items: center; }
-      @keyframes tt-letter { from { opacity: 0; transform: translate(-50%, -46%) rotate(2.5deg) scale(0.97); } }
-      @media (prefers-reduced-motion: reduce) { #title, .tt-letter { transition: none; animation: none; } }
 
       /* ---------- the coach: a control taught when it's needed ---------- */
       #coach {
@@ -515,7 +454,9 @@
     <div id="hint">
       <span class="unlocked"><kbd>Click</kbd> to look around</span>
       <span class="nolock"><kbd>Drag</kbd> to look around</span>
+      <span class="kb on-foot"><kbd>Click</kbd> swing cane · <kbd>Y</kbd> take vehicle · <kbd>J</kbd> activities</span>
       <span class="kb"><kbd>Esc</kbd> menu &amp; controls</span>
+      <span class="gp on-foot"><kbd>RT</kbd> swing cane · <kbd>B</kbd> take vehicle</span>
       <span class="gp"><kbd>Start</kbd> menu &amp; controls</span>
     </div>
     <div id="prompt"></div>

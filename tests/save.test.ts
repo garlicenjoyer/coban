@@ -30,7 +30,7 @@ function playADay() {
   sim.grass.wear[2000] = 0.8;
   sim.buildNow('hut');
   sim.works.cairns.push({ x: 10, z: 20 });
-  sim.notesRead.add('letter');
+  sim.notesRead.add('museum1');
   sim.signsSeen.add(3);
   sim.satchel.pack(['bread', 'salve', 'rope']);
   while (!sim.tasks.finished) sim.tasks.skip();
@@ -67,7 +67,7 @@ describe('saving at dawn', () => {
     const h = layout.works.hut;
     expect(b.obstacles.blocked(h.x, h.z, 0.3)).toBe(true);
     expect(b.works.cairns).toEqual([{ x: 10, z: 20 }]);
-    expect(b.notesRead.has('letter')).toBe(true);
+    expect(b.notesRead.has('museum1')).toBe(true);
     expect(b.signsSeen.has(3)).toBe(true);
     expect(b.satchel.ids).toEqual(['bread', 'salve', 'rope']);
     expect(b.nightReport(2)?.reason).toBe(a.nightReport(2)?.reason);

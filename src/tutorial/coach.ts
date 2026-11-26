@@ -309,7 +309,7 @@ const LESSONS: Lesson[] = [
     remindAfter: Infinity,
     needed: (c) => !c.sim.riding && (targetDistance(c.sim) > 140 || (CALM_TASKS.has(taskId(c.sim) ?? '') && c.sim.tasks.state.t > 6)),
     glyph: (d) => ({ kind: 'keys', keys: [pad(d) ? 'View' : 'M'] }),
-    title: () => 'Unfold Uncle Ahmet’s map',
+    title: () => 'Unfold the valley map',
     body: () => 'Pastures, paths, water, and where you stand.',
     done: 'Press it again to fold it away.',
     doing: (c) => c.mapOpen,

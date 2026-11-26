@@ -2,7 +2,7 @@ import type { GameAudio } from './audio';
 import type { Vec3Like } from '../core/events';
 import type { ResidentDialogue } from '../life/dialogue';
 import { residentVoices, type ResidentSpeech, type Vowel } from '../life/residentSpeech';
-import type { ResidentId } from '../world/mapTypes';
+import { residentVoice, type ResidentId } from '../world/mapTypes';
 import { position, spatial } from './valleyLifeAudio';
 
 const formants: Record<Vowel, readonly [number, number]> = {
@@ -14,7 +14,7 @@ export function playResidentSpeech(
 ): (() => void) | undefined {
   const syllables = speech.syllables.filter(({ start, length }) => start + length > elapsed + 0.012);
   if (!syllables.length) return;
-  const voice = residentVoices[id];
+  const voice = residentVoices[residentVoice[id]];
   const now = ctx.currentTime + 0.012;
   const tone = ctx.createOscillator();
   const body = ctx.createOscillator();
@@ -114,7 +114,7 @@ export class ResidentVoiceAudio {
     }
     if (this.pan && current) {
       const resident = current.resident;
-      position(this.pan, resident, resident.tractor ? 2.32 : 1.61);
+      position(this.pan, resident, resident.driving ? 2.32 : 1.61);
     }
   }
 }

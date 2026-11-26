@@ -1,3 +1,4 @@
+import { campaignDay } from './campaignFixture';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { emptyFrame, type InputFrame } from '../src/core/input';
 import { Mode } from '../src/flock/sheep';
@@ -9,7 +10,7 @@ export const terrain = buildTerrain();
 let ready: Promise<void> | null = null;
 export const initRapier = () => (ready ??= RAPIER.init());
 
-export const newSim = () => new Sim(RAPIER, terrain);
+export const newSim = () => new Sim(RAPIER, terrain, campaignDay);
 
 /** Camera yaw that makes "forward" point from (x0,z0) toward (x1,z1). */
 export const yawToward = (x0: number, z0: number, x1: number, z1: number) => Math.atan2(-(x1 - x0), -(z1 - z0));
