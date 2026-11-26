@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { SIM_DT } from '../core/config';
 import type { Sim } from '../sim';
 import { vehicleSpecs, type RoadVehicle } from './roadVehicle';
+import { circleContact } from './chassisContact';
+import type { Bike } from '../bike/bike';
 import { jointsOf } from './residentRig';
 import type { Resident } from './residents';
 
@@ -9,6 +11,7 @@ export interface PedestrianTarget {
   root: THREE.Object3D;
   resident?: Resident;
   dodging?: boolean;
+  presentAt?(hour: number): boolean;
 }
 
 interface Jump {
@@ -43,15 +46,34 @@ function visible(target: PedestrianTarget): boolean {
   return true;
 }
 
-function sweep(vehicle: RoadVehicle | null) {
-  if (!vehicle || vehicle.kind === 'tractor') return;
+function sweep(vehicle: RoadVehicle | Bike) {
   const dx = vehicle.x - vehicle.px, dz = vehicle.z - vehicle.pz;
   const distance = Math.hypot(dx, dz), speed = distance / SIM_DT;
-  if (speed < 2.2) return;
-  const { width, length } = vehicleSpecs[vehicle.kind];
-  return { vehicle, distance, speed, fx: dx / distance, fz: dz / distance, width, length };
+  if (speed < 1.6) return;
+  const road = 'kind' in vehicle;
+  const yaw = road ? vehicle.yaw : vehicle.heading;
+  const previousYaw = road ? vehicle.previousYaw : vehicle.prevHeading;
+  const turn = Math.atan2(Math.sin(yaw - previousYaw), Math.cos(yaw - previousYaw));
+  const { width, length } = road ? vehicleSpecs[vehicle.kind] : { width: 0.35, length: 0.99 };
+  const fx = dx / distance, fz = dz / distance;
+  const fore = Math.abs(Math.sin(yaw) * fx + Math.cos(yaw) * fz);
+  const side = Math.abs(Math.cos(yaw) * fx - Math.sin(yaw) * fz);
+  return { vehicle, distance, speed, fx, fz, width, length, previousYaw, turn,
+    lead: fore * length + side * width, breadth: side * length + fore * width };
 }
 type Pass = NonNullable<ReturnType<typeof sweep>>;
+
+function contacts(pass: Pass, p: THREE.Vector3): boolean {
+  const { vehicle: v, width, length, previousYaw, turn } = pass;
+  const steps = Math.min(16, Math.max(1, Math.ceil((pass.distance + Math.abs(turn) * length) / 0.18)));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    if (Math.abs(p.y - lerp(v.py, v.y, t)) < 1.6 && circleContact({
+      x: lerp(v.px, v.x, t), z: lerp(v.pz, v.z, t), yaw: previousYaw + turn * t, width, length,
+    }, p.x, p.z, 0.32)) return true;
+  }
+  return false;
+}
 
 /** Fixed-step contacts use the same displaced feet that the character is drawn at. */
 export class VehiclePedestrians {
@@ -63,34 +85,40 @@ export class VehiclePedestrians {
     private hit: (target: PedestrianTarget, dirX: number, dirZ: number, speed: number) => void) {}
 
   step(vehicle: RoadVehicle | null): void {
-    const pass = sweep(vehicle);
-    if (!pass && !this.jumps.size) return;
+    const vehicles: (RoadVehicle | Bike)[] = [];
+    if (vehicle) vehicles.push(vehicle);
+    else if (this.sim.bike.rider) vehicles.push(this.sim.bike);
+    for (const owner of this.sim.residents.list) {
+      if (owner.vehicle && owner.vehicle !== vehicle && owner.vehicle.moving) vehicles.push(owner.vehicle);
+    }
+    const passes = vehicles.map(sweep).filter((p): p is Pass => !!p);
+    if (!passes.length && !this.jumps.size) return;
     const targets = this.targets();
     for (const target of targets) {
       if (target.resident && (target.resident.driving || !this.sim.residents.list.includes(target.resident))) continue;
       if (this.down(target)) continue;
       let jump = this.jumps.get(target.root);
-      if (!visible(target)) {
+      if (!target.resident && !(target.presentAt?.(this.sim.hour) ?? visible(target))) {
         if (jump) this.advance(jump);
         continue;
       }
-      if (!jump && !pass) continue;
+      if (!jump && !passes.length) continue;
       const p = feet(target);
-      if (pass && Math.abs(p.y - pass.vehicle.y) < 4) {
+      let struck = false;
+      for (const pass of passes) {
+        if (Math.abs(p.y - pass.vehicle.y) >= 4) continue;
         const dx = p.x - pass.vehicle.px, dz = p.z - pass.vehicle.pz;
         const along = dx * pass.fx + dz * pass.fz, side = dx * pass.fz - dz * pass.fx;
-        const gap = along - pass.length - pass.distance;
-        // A person's radius rounds off each corner of the swept bumper.
-        const outsideX = Math.max(0, Math.abs(side) - pass.width);
-        const outsideZ = Math.max(0, -along - pass.length, gap);
-        if (outsideX * outsideX + outsideZ * outsideZ < 0.30 ** 2 && Math.abs(p.y - pass.vehicle.y) < 1.6
-          && this.sim.obstacles.clearBetween(p, pass.vehicle)) {
+        const gap = along - pass.lead - pass.distance;
+        if (Math.abs(side) > pass.breadth + 0.55 || along < -pass.lead - 0.55) continue;
+        if (gap < 0.55 && contacts(pass, p)) {
           move(target, p);
           this.hit(target, pass.fx, pass.fz, pass.speed);
-          continue;
+          struck = true;
+          break;
         }
         if ((!jump || jump.age >= windup + airtime) && gap > 0 && gap < pass.speed * 0.88
-          && Math.abs(side) < pass.width + 0.48 && this.seesVehicle(target, p, pass.vehicle)) {
+          && this.seesVehicle(target, p, pass.vehicle)) {
           const landing = this.landing(p, side, pass, target, targets);
           if (landing) {
             jump = { target, home: jump?.home ?? p.clone(), start: p, landing, age: 0, returning: 0,
@@ -100,11 +128,11 @@ export class VehiclePedestrians {
           }
         }
       }
-      if (jump) this.advance(jump);
+      if (jump && !struck) this.advance(jump);
     }
   }
 
-  private seesVehicle(target: PedestrianTarget, p: THREE.Vector3, v: RoadVehicle): boolean {
+  private seesVehicle(target: PedestrianTarget, p: THREE.Vector3, v: RoadVehicle | Bike): boolean {
     const heading = target.resident && target.resident.yaw + target.resident.glance;
     const gaze = heading === undefined ? target.root.getWorldDirection(new THREE.Vector3())
       : new THREE.Vector3(Math.sin(heading), 0, Math.cos(heading));
@@ -115,7 +143,7 @@ export class VehiclePedestrians {
   private landing(p: THREE.Vector3, side: number, pass: Pass, target: PedestrianTarget, targets: PedestrianTarget[]): THREE.Vector3 | undefined {
     const nearest = side < 0 ? -1 : 1;
     for (const sign of [nearest, -nearest]) {
-      const reach = sign * (pass.width + 1.1) - side;
+      const reach = sign * (pass.breadth + 1.1) - side;
       const x = p.x + reach * pass.fz, z = p.z - reach * pass.fx;
       const y = this.sim.terrain.heightAt(x, z);
       const samples = Math.ceil(Math.abs(reach) / 0.3);

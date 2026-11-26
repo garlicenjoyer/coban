@@ -55,7 +55,7 @@ class Villager {
   private readonly hands: THREE.Object3D[];
   private readonly restHeight: number;
 
-  constructor(models: THREE.Group, name: string, readonly voice: ResidentId, private readonly seated = false) {
+  constructor(models: THREE.Group, name: string, readonly voice: ResidentId, private readonly hours: readonly [number, number], private readonly seated = false) {
     this.root = cloneSkeleton(modelPart(models, name));
     this.root.traverse((node) => { if (node instanceof THREE.SkinnedMesh) node.frustumCulled = false; });
     const joint = jointsOf(this.root);
@@ -74,6 +74,8 @@ class Villager {
       joint(side + ' Foot').rotation.x = -0.23;
     }
   }
+
+  presentAt(hour: number): boolean { return hour >= this.hours[0] && hour < this.hours[1]; }
 
   dodging = false;
   alarmAt = -Infinity;
@@ -224,7 +226,7 @@ class Clothesline {
     if (!this.root.visible) return;
     this.resting.forEach((cloth, i) => { cloth.rotation.x = 0.09 * Math.sin(time * 1.6 + i * 1.3) + 0.04 * Math.sin(time * 3.9 + i); });
     const worker = this.worker;
-    worker.root.visible = hour >= 6.8 && hour < 18.3;
+    worker.root.visible = worker.presentAt(hour);
     const phase = time % 19;
     const lift = smoothstep(phase, 1.4, 3.9) - smoothstep(phase, 15.0, 17.3);
     const grip = smoothstep(phase, 0.4, 1.4) - smoothstep(phase, 4.8, 5.8)
@@ -288,10 +290,10 @@ export class VillageLifeView {
     const places = [
       { name: 'Ismail', voice: 'hasan', x: game.x - 0.78, z: game.z, yaw: Math.PI / 2, cupX: game.x - 0.21, cupZ: game.z - 0.23, phase: 6 },
       { name: 'Riza', voice: 'emre', x: game.x + 0.78, z: game.z, yaw: -Math.PI / 2, cupX: game.x + 0.20, cupZ: game.z + 0.23, phase: 15 },
-      { name: 'Cemal', voice: 'hasan', x: tea.x, z: tea.z - 0.73, yaw: 0, cupX: tea.x + 0.14, cupZ: tea.z - 0.17, phase: 3 },
+      { name: 'Cemal', voice: 'hasan', x: tea.x, z: tea.z + 0.73, yaw: Math.PI, cupX: tea.x - 0.14, cupZ: tea.z + 0.17, phase: 3 },
     ] as const;
     this.seats = places.map(({ name, voice, x, z, yaw, cupX, cupZ, phase }, i) => {
-      const person = new Villager(models, name, voice, true);
+      const person = new Villager(models, name, voice, [6.35, 20.5], true);
       const ground = cafeGround(x, z);
       person.root.position.set(x, ground + 0.035, z);
       person.root.rotation.y = yaw;
@@ -308,14 +310,14 @@ export class VillageLifeView {
     });
     props.place(this.cafe, 'Wooden stool', tea.x - 0.71, cafeGround(tea.x - 0.71, tea.z), tea.z, 0.8);
 
-    this.pair = [new Villager(models, 'Nermin', 'zeynep'), new Villager(models, 'Selma', 'ayse')];
+    this.pair = [new Villager(models, 'Nermin', 'zeynep', [6.6, 19.6]), new Villager(models, 'Selma', 'ayse', [6.6, 19.6])];
     for (const [i, person] of this.pair.entries()) {
       const x = village.x - 7.9 + i * 1.16, z = village.z + 8.35 - i * 0.19;
       person.root.position.set(x, terrain.heightAt(x, z) + 0.035, z);
       person.root.rotation.y = Math.atan2(1.16, -0.19) + i * Math.PI;
       this.root.add(person.root);
     }
-    const worker = new Villager(models, 'Emine', 'ayse');
+    const worker = new Villager(models, 'Emine', 'ayse', [6.8, 18.3]);
     this.laundry = new Clothesline(worker, props, village, terrain);
     this.root.add(this.laundry.root);
     this.streetLines = ['Pazara indin mi bugün?', 'İndim, domatesler pek güzel bu sene.', 'Akşama uğra, bir çay içeriz.']
@@ -347,7 +349,7 @@ export class VillageLifeView {
   }
 
   private atCafe(hour: number, time: number, previous: number, dt: number, player: Vec3Like, sounds: VillageSounds): void {
-    const open = hour >= 6.35 && hour < 20.5;
+    const open = this.seats[0].person.presentAt(hour);
     const distance = Math.hypot(player.x - this.cafe.position.x, player.z - this.cafe.position.z);
     const arriving = open && player.x < this.cafe.position.x - 4 && distance < 15;
     if (distance > 22) this.approachClear = true;
@@ -419,7 +421,7 @@ export class VillageLifeView {
     const offsets = [1.0, 3.5, 7.2];
     for (const [index, person] of this.pair.entries()) {
       const p = person.root.position;
-      person.root.visible = hour >= 6.6 && hour < 19.6 && Math.hypot(camera.x - p.x, camera.z - p.z) < 100;
+      person.root.visible = person.presentAt(hour) && Math.hypot(camera.x - p.x, camera.z - p.z) < 100;
       if (!person.root.visible || person.alarmed(time, player)) continue;
       const turn = offsets.findIndex((start, i) => i % 2 === index && cycle >= start && cycle - start < this.streetLines[i].duration);
       const line = this.streetLines[turn];

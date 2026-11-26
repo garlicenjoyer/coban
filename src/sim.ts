@@ -1,3 +1,4 @@
+import { collideTraffic } from './life/trafficCollisions';
 import { ValleySprint } from './bike/valleySprint';
 import { vehicleSpecs, type RoadVehicle } from './life/roadVehicle';
 import { emptyFrame } from './core/input';
@@ -234,7 +235,7 @@ export class Sim {
     this.tick = 0;
     this.hour = this.freeRoam ? 7 : config.time.startHour;
     this.residents.setTime(this.hour);
-    this.syncVehicles();
+    this.syncVehicles(true);
     this.sunsetTallies.clear();
     this.goldenHourAnnounced = false;
     this.nightProbe = null;
@@ -595,6 +596,7 @@ export class Sim {
     this.tasks.enabled = !this.freeRoam;
     this.hour = this.freeRoam ? 7 : config.time.startHour;
     this.residents.setTime(this.hour);
+    this.syncVehicles(true);
     this.errands.cancelWork();
     this.goldenHourAnnounced = false;
     // Waking at home: the satchel is refilled from the shelves.
@@ -995,7 +997,7 @@ export class Sim {
       const parking = d.vehicles?.[resident.id] ?? d.tractors?.[resident.id];
       if (parking && resident.driving) resident.releaseVehicle(parking);
     }
-    this.syncVehicles();
+    this.syncVehicles(true);
     const spot = clearVillageSpot(d.player, config.player.capsuleRadius);
     this.teleport(spot.x, spot.z);
     this.events.emit('loaded', { day: d.day, hour: d.midday ? this.hour : undefined });
@@ -1213,21 +1215,35 @@ export class Sim {
     return closest;
   }
 
-  private syncVehicles(): void {
+  get cameraCollider(): RAPIERType.Collider {
+    if (this.drivenVehicle) {
+      for (const [owner, collider] of this.vehicleBodies) if (owner.vehicle === this.drivenVehicle) return collider;
+    }
+    return this.player.collider;
+  }
+
+  private syncVehicles(snap = false): void {
     for (const owner of this.residents.list) {
       if (!owner.driving && !owner.vehicle) continue;
       const vehicle = owner.vehicle ?? owner;
       const spec = vehicleSpecs[owner.vehicleKind];
       let collider = this.vehicleBodies.get(owner);
+      const created = !collider;
       if (!collider) {
         const body = this.world.createRigidBody(this.R.RigidBodyDesc.kinematicPositionBased());
         collider = this.world.createCollider(this.R.ColliderDesc.cuboid(spec.width, spec.height, spec.length), body);
         this.vehicleBodies.set(owner, collider);
       }
       const body = collider.parent()!;
-      body.setTranslation({ x: vehicle.x, y: vehicle.y + spec.height + 0.03, z: vehicle.z }, true);
-      body.setRotation({ x: 0, y: Math.sin(vehicle.yaw / 2), z: 0, w: Math.cos(vehicle.yaw / 2) }, true);
-      collider.setEnabled(!owner.vehicle?.occupied);
+      const position = { x: vehicle.x, y: vehicle.y + spec.height + 0.03, z: vehicle.z };
+      const rotation = { x: 0, y: Math.sin(vehicle.yaw / 2), z: 0, w: Math.cos(vehicle.yaw / 2) };
+      if (snap || created) {
+        body.setTranslation(position, true);
+        body.setRotation(rotation, true);
+      }
+      body.setNextKinematicTranslation(position);
+      body.setNextKinematicRotation(rotation);
+      collider.setCollisionGroups(owner.vehicle?.occupied ? 0x00040002 : 0xffffffff);
     }
   }
 
@@ -1235,10 +1251,8 @@ export class Sim {
     this.closeDialogue();
     this.releaseRope();
     const attended = owner.driving;
-    const speed = owner.speed;
     this.drivenVehicle = owner.releaseVehicle();
     if (attended) {
-      this.drivenVehicle.speed = speed;
       this.residents.reactToTheft(owner, this.drivenVehicle);
     }
     this.drivenVehicle.occupied = true;
@@ -1249,8 +1263,9 @@ export class Sim {
     const t = this.drivenVehicle!;
     const spot = t.beside();
     if (!spot) return;
-    t.speed = 0;
     t.occupied = false;
+    t.speed = 0;
+    t.spin = 0;
     t.px = t.x; t.py = t.y; t.pz = t.z; t.previousYaw = t.yaw;
     this.drivenVehicle = null;
     this.player.collider.setEnabled(true);
@@ -1533,8 +1548,8 @@ export class Sim {
       else if (f.takeVehicle || f.interact) this.leaveVehicle();
       const t = this.drivenVehicle;
       if (t) {
-        const others = this.residents.list.filter(r => r.driving || (r.vehicle && r.vehicle !== t)).map(r => r.vehicle ?? r);
-        t.step(SIM_DT, f, [b, ...others]);
+        const speed = t.step(SIM_DT, f);
+        if (speed > 1.5) this.events.emit('vehicleCrash', { x: t.x, y: t.y + 0.5, z: t.z, speed });
         if (f.horn) {
           this.hornTime = 1;
           this.events.emit('bikeHorn', { x: t.x, z: t.z, tick: this.tick });
@@ -1630,6 +1645,18 @@ export class Sim {
     const leaking = b.care.leak;
     b.step(SIM_DT, b.rider ? { throttle: f.throttle, brake: f.brake, steer: f.steer, weightShift: f.weightShift } : { throttle: 0, brake: 0, steer: 0, weightShift: 0 }, this.tick);
     if (b.care.leak && !leaking) this.events.emit('bikePuncture', { tick: this.tick });
+    this.hornTime = Math.max(0, this.hornTime - SIM_DT);
+    const honking = this.hornTime > 0;
+    this.residents.step(SIM_DT, {
+      player: p.pos, playerSpeed: Math.hypot(p.vel.x, p.vel.z), rider: this.riding,
+      dog: this.dog, bike: b, sheep: this.flock.sheep, hour: this.hour, honking,
+    });
+    for (const r of this.residents.list) {
+      if (r.vehicle && !r.vehicle.occupied && r.vehicle.moving) r.vehicle.step(SIM_DT);
+    }
+    collideTraffic(this.residents, this.drivenVehicle, b, this.tick, this.events);
+    this.syncVehicles();
+    this.events.emit('roadVehicleStep', { vehicle: this.drivenVehicle });
     if (wasRiding && b.state === 'fallen') {
       this.lap.noteFall();
       if (b.rider) this.dismount(); // thrown off
@@ -1869,14 +1896,6 @@ export class Sim {
       wolves: this.wolves.active(),
       bike: { x: b.x, z: b.z, vx: b.vx, vz: b.vz, heading: b.heading, noise: b.noise },
     });
-    this.hornTime = Math.max(0, this.hornTime - SIM_DT);
-    const honking = this.hornTime > 0;
-    this.residents.step(SIM_DT, {
-      player: p.pos, playerSpeed: Math.hypot(p.vel.x, p.vel.z), rider: this.riding,
-      dog, bike: b, sheep: this.flock.sheep, hour: this.hour, honking,
-    });
-    this.syncVehicles();
-    this.events.emit('roadVehicleStep', { vehicle: this.drivenVehicle });
     this.wildlife.step(SIM_DT, {
       player: p.pos, gait: p.gait, dog, dogRunning: dog.running || dog.charging,
       bike: b, bikeRunning: b.engineOn, honking, hour: this.hour,

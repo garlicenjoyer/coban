@@ -26,6 +26,7 @@ interface Fall { links: Link[]; until: number; target: PedestrianTarget }
 /** The actual character skeleton follows jointed Rapier bodies until the get-up blend finishes. */
 export class Ragdolls {
   private pedestrians: VehiclePedestrians;
+  private ejections: GameEvents['driverThrown'][] = [];
   private falls = new Map<THREE.Object3D, Fall>();
 
   constructor(private sim: Sim, private targets: () => PedestrianTarget[], private impact: (at: THREE.Vector3) => void) {
@@ -33,10 +34,25 @@ export class Ragdolls {
       (target, dx, dz, speed) => this.strike(target, target.root.getWorldPosition(new THREE.Vector3()), dx, dz,
         Math.min(13, 2.5 + speed * 0.62), Math.min(5.6, 1.7 + speed * 0.21)));
     sim.events.on('roadVehicleStep', ({ vehicle }) => this.pedestrians.step(vehicle));
+    sim.events.on('driverThrown', crash => {
+      this.ejections.push(crash);
+      this.applyEjections();
+    });
     sim.events.on('slept', () => this.pedestrians.reset());
     sim.events.on('crookWave', wave => this.swing(wave));
     // Reset replaces the entire Rapier world, including all transient bodies.
-    sim.events.on('simReset', () => { this.restoreAnimation(); this.pedestrians.reset(); this.falls.clear(); });
+    sim.events.on('simReset', () => { this.restoreAnimation(); this.pedestrians.reset(); this.falls.clear(); this.ejections.length = 0; });
+  }
+
+  private applyEjections(): void {
+    if (!this.ejections.length) return;
+    const people = this.targets();
+    this.ejections = this.ejections.filter(({ resident, dx, dz, speed }) => {
+      const target = people.find(person => person.resident === resident);
+      if (!target) return true; // The first render after loading installs the new village skeletons.
+      this.strike(target, target.root.getWorldPosition(new THREE.Vector3()), dx, dz, Math.min(11, speed * 0.55), 3);
+      return false;
+    });
   }
 
   private swing(wave: GameEvents['crookWave']): void {
@@ -52,7 +68,11 @@ export class Ragdolls {
       if (distance > 2.35 || Math.abs(at.y - wave.origin.y - 0.85) > 1.25
         || (distance > 0.32 && dx * wave.dirX + dz * wave.dirZ < distance * Math.cos(wave.halfAngle))) continue;
       if ([0.25, 0.5, 0.75].some(t => this.sim.obstacles.blocked(wave.origin.x + dx * t, wave.origin.z + dz * t, 0.05))) continue;
-      this.strike(target, at, wave.dirX, wave.dirZ, 6.3, 2.7);
+      if (target.resident?.driving) {
+        target.resident.releaseVehicle();
+        const driver = this.targets().find(person => person.resident === target.resident);
+        if (driver) this.strike(driver, at, wave.dirX, wave.dirZ, 6.3, 2.7);
+      } else this.strike(target, at, wave.dirX, wave.dirZ, 6.3, 2.7);
     }
   }
 
@@ -80,7 +100,7 @@ export class Ragdolls {
       const body = this.sim.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic()
         .setTranslation(origin.x, origin.y, origin.z).setRotation(rotation).setAngularDamping(1.9).setLinearDamping(0.48));
       const shape = RAPIER.ColliderDesc.capsule(Math.max(0.01, Math.abs(center) - radius * 0.5), radius)
-        .setTranslation(0, center, 0).setMass(name === 'Chest' ? 5 : 1.5).setFriction(0.88).setCollisionGroups(0x00020001);
+        .setTranslation(0, center, 0).setMass(name === 'Chest' ? 5 : 1.5).setFriction(0.88).setCollisionGroups(0x00020005);
       this.sim.world.createCollider(shape, body);
       if (parentName) {
         const parent = bodies.get(parentName)!;
@@ -109,6 +129,7 @@ export class Ragdolls {
   }
 
   pose(): void {
+    this.applyEjections();
     this.pedestrians.pose();
     for (const [root, { links, until, target }] of this.falls) {
       const weight = THREE.MathUtils.smoothstep((until - this.sim.tick) * SIM_DT, 0, 0.55);

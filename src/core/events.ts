@@ -1,6 +1,7 @@
 // Tiny typed event bus. Systems publish facts; other systems (flock, dog, audio)
 // subscribe without importing each other.
 
+import type { Resident } from '../life/residents';
 import type { RoadVehicle } from '../life/roadVehicle';
 import type { DogCommand } from '../dog/commands';
 import type { ResidentSpeech } from '../life/residentSpeech';
@@ -121,6 +122,8 @@ export interface GameEvents {
   /** Karabaş was bitten driving off a wolf. */
   dogHurt: { tick: number };
   vehicleTaken: Vec3Like;
+  vehicleCrash: Vec3Like & { speed: number };
+  driverThrown: { resident: Resident; dx: number; dz: number; speed: number };
   roadVehicleStep: { vehicle: RoadVehicle | null };
   residentShout: Vec3Like & { resident: ResidentId; speech: ResidentSpeech };
   encounter: { name: string; text: string };

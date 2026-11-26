@@ -1,3 +1,4 @@
+import type { Chassis } from '../life/chassisContact';
 // The old motorcycle (GDD: The old motorcycle, Motorcycle physics).
 //
 // A two-wheel model integrated in our own fixed step (deterministic, no rigid-body
@@ -202,6 +203,20 @@ export class Bike {
     this.events.emit('bikeEngine', { on: false, reason, tick });
   }
 
+  impactSpin = 0;
+
+  trafficImpact(body: Chassis, closing: number, tick: number): void {
+    this.x = body.x; this.z = body.z;
+    this.y = this.terrain.heightAt(this.x, this.z);
+    if (closing > (this.rider ? 4.5 : 1.6)) this.fall('struck by a vehicle', tick);
+    if (this.state === 'parked') return;
+    const sign = Math.sign(body.vx * Math.sin(this.heading) + body.vz * Math.cos(this.heading)) || 1;
+    this.u = sign * Math.hypot(body.vx, body.vz);
+    if (Math.abs(this.u) > 0.01) this.course = Math.atan2(body.vx * sign, body.vz * sign);
+    if (this.state === 'riding') this.beta = wrap(this.heading - this.course);
+    this.impactSpin = Math.max(-6, Math.min(6, body.spin));
+  }
+
   fall(reason: string, tick: number): void {
     if (this.state === 'fallen') return;
     this.state = 'fallen';
@@ -214,6 +229,7 @@ export class Bike {
 
   lift(): void {
     this.state = 'parked';
+    this.impactSpin = 0;
     this.u = 0;
     this.beta = 0;
     this.lean = 0;
@@ -265,6 +281,12 @@ export class Bike {
       return;
     }
 
+    if (this.impactSpin) {
+      if (this.state === 'fallen') this.heading += this.impactSpin * dt;
+      else this.beta = wrap(this.beta + this.impactSpin * dt);
+      this.impactSpin *= Math.exp(-3 * dt);
+      if (Math.abs(this.impactSpin) < 0.01) this.impactSpin = 0;
+    }
     if (this.state === 'fallen') {
       // Sliding on its side to a stop.
       const s = this.speed;

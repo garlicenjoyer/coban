@@ -117,6 +117,52 @@ describe('free roam', () => {
     expect(sim.vehicleNear?.driving).toBe(false);
   });
 
+  it.each([3, 14])('transfers a %s m/s impact to a traffic van and only ejects its driver in the hard crash', speed => {
+    const sim = new Sim(RAPIER, terrain);
+    try {
+      const owner = sim.residents.list.find(r => r.id === 'deniz')!;
+      const other = sim.residents.list.find(r => r.id === 'murat')!;
+      sim.teleport(owner.x + 2 * Math.cos(owner.yaw), owner.z - 2 * Math.sin(owner.yaw));
+      sim.step({ ...emptyFrame(), takeVehicle: true });
+      const car = sim.drivenVehicle!;
+      const fx = Math.sin(other.yaw), fz = Math.cos(other.yaw);
+      const start = { x: other.x, z: other.z };
+      Object.assign(car, { x: other.x + fx * 4.3, z: other.z + fz * 4.3, yaw: other.yaw + Math.PI, speed });
+      const crashes: number[] = [], thrown: string[] = [];
+      sim.events.on('vehicleCrash', e => crashes.push(e.speed));
+      sim.events.on('driverThrown', e => thrown.push(e.resident.id));
+      for (let i = 0; i < 22; i++) sim.step(emptyFrame());
+      expect(crashes.length).toBeGreaterThan(0);
+      expect(car.speed).toBeLessThan(speed * 0.75);
+      const body = other.trafficChassis();
+      expect((body.x - start.x) * fx + (body.z - start.z) * fz).toBeLessThan(-0.02);
+      expect(thrown).toEqual(speed > 7.5 ? ['murat'] : []);
+      expect(other.driving).toBe(speed < 7.5);
+    } finally {
+      sim.world.free();
+    }
+  });
+
+  it('tips and pushes the parked motorcycle when a stolen car strikes it', () => {
+    const sim = new Sim(RAPIER, terrain);
+    try {
+      const owner = sim.residents.list.find(r => r.id === 'deniz')!;
+      sim.teleport(owner.x + 2 * Math.cos(owner.yaw), owner.z - 2 * Math.sin(owner.yaw));
+      sim.step({ ...emptyFrame(), takeVehicle: true });
+      const car = sim.drivenVehicle!;
+      const bike = sim.bike;
+      const start = { x: bike.x, z: bike.z };
+      Object.assign(car, { x: bike.x - 3 * Math.sin(bike.heading), z: bike.z - 3 * Math.cos(bike.heading),
+        yaw: bike.heading, speed: 8 });
+      for (let i = 0; i < 15; i++) sim.step(emptyFrame());
+      expect(bike.state).toBe('fallen');
+      expect(Math.hypot(bike.x - start.x, bike.z - start.z)).toBeGreaterThan(0.4);
+      expect(car.speed).toBeLessThan(8);
+    } finally {
+      sim.world.free();
+    }
+  });
+
   it('keeps theft reactions local and blocks sight through a house', () => {
     const obstacles = new Obstacles(VALLEY_MAP.buildProps(terrain));
     const house = { x: 416, z: -391 };

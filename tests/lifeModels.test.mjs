@@ -9,13 +9,14 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { expect, it } from 'vitest';
 import { SIM_DT } from '../src/core/config';
 import { EventBus } from '../src/core/events';
-import { vehicleSpecs } from '../src/life/roadVehicle';
+import { RoadVehicle, vehicleSpecs } from '../src/life/roadVehicle';
 import { LifeView } from '../src/life/lifeView';
 import { Residents } from '../src/life/residents';
 import { VillageLifeView } from '../src/life/villageLifeView';
 import { Wildlife } from '../src/life/wildlife';
 import { modelPart } from '../src/render/gameModel';
 import { Obstacles } from '../src/world/obstacles';
+import { activeMap, useMap } from '../src/world/map';
 import { VALLEY_MAP } from '../src/world/valley';
 import { ValleyProps } from '../src/world/valleyProps';
 import { CAFE, LAUNDRY } from '../src/world/villagePlan';
@@ -88,11 +89,12 @@ it('binds each pose to its own joints in the exported model catalogue', async ()
   }
 });
 
+async function load(name) {
+  const bytes = readFileSync(new URL(`../public/models/${name}.glb`, import.meta.url));
+  return (await new GLTFLoader().parseAsync(Uint8Array.from(bytes).buffer, '')).scene;
+}
+
 it('plays the village activities, reacts to an arrival, and clears the seats after hours', async () => {
-  const load = async (name) => {
-    const bytes = readFileSync(new URL(`../public/models/${name}.glb`, import.meta.url));
-    return (await new GLTFLoader().parseAsync(Uint8Array.from(bytes).buffer, '')).scene;
-  };
   const [life, props] = await Promise.all([load('valley-life'), load('valley-props')]);
   const village = VALLEY_MAP.layout.village;
   const terrain = VALLEY_MAP.buildTerrain();
@@ -167,4 +169,47 @@ it('knocks a visible villager into an articulated fall and restores the working 
   expect(hips.position.distanceTo(rest)).toBeLessThan(0.001);
   expect(sim.world.impulseJoints.len()).toBe(0);
   sim.world.free();
+});
+
+it.each(['car', 'van'])('can physically reach each village pedestrian with a %s, even between render updates', async kind => {
+  const [models, props] = await Promise.all([load('valley-life'), load('valley-props'), initRapier()]);
+  const previous = activeMap();
+  useMap(VALLEY_MAP);
+  const sim = new Sim(RAPIER);
+  try {
+    const ground = (x, z) => sim.terrain.heightAt(x, z);
+    const routines = new LifeView(models, ground, VALLEY_MAP.layout.village);
+    routines.update(sim.residents, sim.wildlife, 1, SIM_DT, new Vector3(), 0);
+    const activities = new VillageLifeView(VALLEY_MAP.layout.village, sim.terrain, models, new ValleyProps(props));
+    for (const r of sim.residents.list) if (r.driving) r.releaseVehicle();
+    const people = [...routines.people, ...activities.people];
+    expect(people).toHaveLength(14);
+    let target;
+    let hits = 0;
+    new Ragdolls(sim, () => [target], () => hits++);
+    for (const [index, person] of people.entries()) {
+      target = person;
+      const p = person.resident ?? person.root.getWorldPosition(new Vector3());
+      const name = person.resident?.id ?? person.root.name;
+      person.root.visible = false;
+      // Try a short, straight approach on each side of the actual furniture and buildings.
+      for (let a = 0; a < 32 && hits === index; a++) {
+        const yaw = Math.PI * 2 * a / 32, range = vehicleSpecs[kind].length + 0.55;
+        const car = new RoadVehicle({ x: p.x - Math.sin(yaw) * range, z: p.z - Math.cos(yaw) * range, yaw },
+          sim.terrain, sim.obstacles, kind);
+        car.constrain();
+        if (Math.hypot(car.x - car.px, car.z - car.pz) > 0.01) continue;
+        car.speed = 8;
+        for (let t = 0; t < 6 && hits === index; t++) {
+          car.step(SIM_DT, { throttle: 0, steer: 0, brake: 0 });
+          sim.events.emit('roadVehicleStep', { vehicle: car });
+        }
+      }
+      expect(hits, name).toBe(index + 1);
+      expect(sim.world.impulseJoints.len(), name).toBe(10 * (index + 1));
+    }
+  } finally {
+    sim.world.free();
+    useMap(previous);
+  }
 });

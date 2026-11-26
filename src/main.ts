@@ -237,6 +237,7 @@ async function main() {
     audio.bark(e.kind, e.x, sim.terrain.heightAt(e.x, e.z), e.z, nightAlarm);
   });
   const atBike = (kind: 'kick' | 'kickFail' | 'thunk' | 'horn', strength = 1) => audio.bikeSound(kind, strength, sim.bike.x, sim.bike.y + 0.6, sim.bike.z);
+  sim.events.on('vehicleCrash', e => audio.bikeSound('thunk', Math.min(1, e.speed / 9), e.x, e.y, e.z));
   sim.events.on('bikeThunk', (e) => atBike('thunk', e.strength));
   sim.events.on('bikeHorn', ({ x, z }) => audio.bikeSound('horn', 1, x, groundAt(x, z) + 0.6, z));
   // A misfire pops, a skipping chain clanks.
@@ -311,7 +312,7 @@ async function main() {
   const stations = { teaTable: house.teaTable, milkingStation: economyView.milkingStation, press: economyView.press };
   const playerView = new PlayerView(scene, sim, shepherd, bikeView, stations, fieldProps,
     (success) => atBike(success ? 'kick' : 'kickFail'));
-  const rig = new CameraRig(RAPIER, () => sim.world, () => sim.player.collider, groundAt, canvas);
+  const rig = new CameraRig(RAPIER, () => sim.world, () => sim.cameraCollider, groundAt, canvas);
   sim.events.on('vehicleTaken', at => villageLife?.witnessTheft(at, sim.tick * SIM_DT, sim.obstacles));
   sim.events.on('residentShout', e => residentVoice.chatter(e, rig.camera.position, e.resident, e.speech));
   sim.events.on('lifeSound', (e) => lifeAudio.call(e.kind, e, rig.camera.position));

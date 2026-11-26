@@ -299,10 +299,21 @@ export class LifeView {
   private residents: ResidentPose[] = [];
   private vehicles = new Map<Resident, { root: THREE.Object3D; wheels: THREE.Object3D[]; axles: THREE.Object3D[] }>();
   get people() {
-    return this.residents.flatMap((pose, i) => {
+    return this.residents.map((_, i) => {
       const resident = this.currentResidents!.list[i];
-      return pose.detached === !!resident.vehicle ? [{ root: pose.person, resident }] : [];
+      return { root: this.personPose(resident, i).person, resident };
     });
+  }
+
+  private personPose(resident: Resident, i: number): ResidentPose {
+    if (resident.vehicle && !this.residents[i].detached) {
+      this.root.remove(this.residents[i].root);
+      const pose = new ResidentPose(resident, this.models, this.groundAt);
+      this.residents[i] = pose;
+      this.root.add(pose.root);
+      place(pose.root, resident, 1);
+    }
+    return this.residents[i];
   }
   private currentResidents?: Residents;
   private animals: (AnimalPose | CatPose)[] = [];
@@ -346,11 +357,6 @@ export class LifeView {
           view = { root, axles: sides.map(side => joint(`Front ${side} Axle`)), wheels: ['Front', 'Rear'].flatMap(end => sides.map(side => joint(`${end} ${side} Wheel`))) };
           this.vehicles.set(r, view);
           this.root.add(root);
-          if (!this.residents[i].detached) {
-            this.root.remove(this.residents[i].root);
-            this.residents[i] = new ResidentPose(r, this.models, this.groundAt);
-            this.root.add(this.residents[i].root);
-          }
         }
         const vehicle = r.vehicle;
         place(view.root, vehicle, alpha);
@@ -360,7 +366,7 @@ export class LifeView {
         const specs = vehicleSpecs[vehicle.kind];
         view.wheels.forEach((wheel, j) => { wheel.rotation.x = vehicle.travel / (j < 2 ? specs.frontWheel : specs.rearWheel); });
       }
-      this.residents[i].update(r, alpha, dt, camera, time);
+      this.personPose(r, i).update(r, alpha, dt, camera, time);
     });
     this.animals.forEach((pose, i) => pose.update(wildlife.animals[i], alpha, dt, camera, i));
   }

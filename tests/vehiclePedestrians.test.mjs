@@ -79,7 +79,7 @@ it('jumps clear in world space, tucks the knees, lands and goes back to the same
   expect(root.getWorldPosition(new Vector3()).distanceTo(home)).toBeLessThan(0.001);
 });
 
-it.each([['car', 54, 12, 0], ['van', 64, -4, Math.PI]])('ragdolls on contact with a %s, including reverse, and recovers once', (kind, z, speed, facing) => {
+it.each([['car', 54, 12, 0], ['van', 64, -4, Math.PI], ['tractor', 56, 7, 0]])('ragdolls on contact with a %s, including reverse, and recovers once', (kind, z, speed, facing) => {
   const { root, step, hits } = crossing(kind, z, speed, facing);
   for (let i = 0; i < 64; i++) step();
   expect(hits()).toBe(1);
@@ -125,7 +125,7 @@ it('keeps people behind a wall at their activity and clears a jump on world rese
   expect(root.getWorldPosition(new Vector3()).distanceTo(home)).toBeLessThan(0.001);
 });
 
-it.each([['van', 60, 0], ['car', 59, 1], ['tractor', 58, 7]])('ignores a parked or creeping vehicle and preserves tractor behaviour', (kind, z, speed) => {
+it.each([['van', 60, 0], ['car', 59, 1]])('ignores a parked or creeping vehicle', (kind, z, speed) => {
   const { step, target, hits } = crossing(kind, z, speed, 0);
   for (let i = 0; i < 45; i++) step();
   expect(target.dodging).toBeFalsy();
