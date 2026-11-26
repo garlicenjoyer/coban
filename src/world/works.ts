@@ -46,7 +46,7 @@ export class Works {
     const h = layout.works.hut;
     // His hut is mended from its doorway; a new one is staked out by the fold's mouth.
     const hut: WorkSite = h.ruined
-      ? { id: 'hut', name: "Uncle Ahmet's hut", ...this.hutDoor, hours: 3, repair: true, progress: 0, built: false }
+      ? { id: 'hut', name: "the hillside hut", ...this.hutDoor, hours: 3, repair: true, progress: 0, built: false }
       : { id: 'hut', name: "the shepherd's hut", x: f.xMax + 1.5, z: (f.zMin + f.zMax) / 2, hours: 3, repair: false, progress: 0, built: false };
     this.sites = [hut, { id: 'cistern', name: 'the rain cistern', x: c.x + 2.6, z: c.z, hours: 1.5, repair: false, progress: 0, built: false }];
   }

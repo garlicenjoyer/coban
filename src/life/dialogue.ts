@@ -2,7 +2,7 @@ import type { Resident } from './residents';
 import type { Errand } from './errands';
 
 export type DialogueChoice = 'routine' | 'advice' | 'errand' | 'accept' | 'leave';
-export type ResidentGesture = 'greet' | 'explain' | 'offer' | 'thank' | 'farewell';
+export type ResidentGesture = 'greet' | 'explain' | 'offer' | 'thank' | 'farewell' | 'protest' | 'startle';
 
 export function errandDirection(place: string, accepted = false): string {
   return accepted ? `Sağ ol. Start at ${place}. I’ve marked the map.` : `Your next stop is ${place}. I’ve marked it on the map.`;

@@ -1,9 +1,15 @@
+import RAPIER from '@dimforge/rapier3d-compat';
+import { Ragdolls } from '../src/life/ragdolls';
+import { jointsOf } from '../src/life/residentRig';
+import { Sim } from '../src/sim';
+import { initRapier } from './helpers';
 import { readFileSync } from 'node:fs';
 import { SkinnedMesh, Vector3 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { expect, it } from 'vitest';
 import { SIM_DT } from '../src/core/config';
 import { EventBus } from '../src/core/events';
+import { vehicleSpecs } from '../src/life/roadVehicle';
 import { LifeView } from '../src/life/lifeView';
 import { Residents } from '../src/life/residents';
 import { VillageLifeView } from '../src/life/villageLifeView';
@@ -71,12 +77,13 @@ it('binds each pose to its own joints in the exported model catalogue', async ()
     expect(joint('Mouth').scale.y, resident.id).toBeGreaterThan(0.04);
     expect(joint('Chest').quaternion.angleTo(restChest), resident.id).toBeGreaterThan(0.04);
 
-    if (!resident.tractor) continue;
+    if (!resident.driving) continue;
     view.update(residents, wildlife, 1, SIM_DT, camera, 1);
     for (const [side, x] of [['Left', -0.225], ['Right', 0.225]]) {
       const foot = skin.skeleton.bones.find((bone) => bone.userData.name === `${side} Foot`);
       const onDeck = actor.worldToLocal(foot.getWorldPosition(new Vector3()));
-      expect(onDeck.distanceTo(new Vector3(x, 0.766, -0.225)), resident.id).toBeLessThan(0.02);
+      const { seatX, seatY, seatZ } = vehicleSpecs[resident.vehicleKind];
+      expect(onDeck.distanceTo(new Vector3(x + seatX, 0.766 + seatY, -0.225 + seatZ)), resident.id).toBeLessThan(0.02);
     }
   }
 });
@@ -114,11 +121,50 @@ it('plays the village activities, reacts to an arrival, and clears the seats aft
   expect(joint('Emine', 'Right Hand').getWorldPosition(new Vector3()).y - hand.y).toBeGreaterThan(0.6);
   expect(actor('Nermin').visible).toBe(true);
 
-  update(4.5 + SIM_DT, 4.55, 22);
+  const corner = actor('Nermin').getWorldPosition(new Vector3());
+  const onlookers = view.people.filter(person => person.root.position.distanceTo(corner) < 2);
+  view.witnessTheft(corner, 4.5, new Obstacles(VALLEY_MAP.buildProps(terrain)));
+  expect(onlookers).toHaveLength(2);
+  expect(onlookers.every(person => person.alarmAt === 4.5)).toBe(true);
+  expect(view.people.find(person => person.root === actor('Ismail')).alarmAt).toBe(-Infinity);
+  update(4.5 + SIM_DT, 4.85);
+  expect(joint('Nermin', 'Right Arm').rotation.x).toBeLessThan(-1);
+
+  update(4.85 + SIM_DT, 4.95, 22);
   expect(actor('Ismail').visible).toBe(false);
   expect(actor('Emine').visible).toBe(false);
   expect(actor('Nermin').visible).toBe(false);
   const line = view.root.getObjectByName('Emine’s washing');
   expect(line.position.x).toBe(village.x + LAUNDRY.x);
   expect(line.visible).toBe(true);
+});
+
+it('knocks a visible villager into an articulated fall and restores the working skeleton', async () => {
+  const bytes = readFileSync(new URL('../public/models/valley-life.glb', import.meta.url));
+  const { scene } = await new GLTFLoader().parseAsync(Uint8Array.from(bytes).buffer, '');
+  await initRapier();
+  const sim = new Sim(RAPIER);
+  const root = modelPart(scene, 'Hasan');
+  const origin = sim.player.pos;
+  root.position.set(origin.x, origin.y, origin.z - 1.5);
+  const hips = jointsOf(root)('Hips');
+  const rest = hips.position.clone();
+  let hits = 0;
+  const ragdolls = new Ragdolls(sim, () => [{ root }], () => hits++);
+  const wave = { origin, dirX: 0, dirZ: 1, halfAngle: 0.78, range: 6, tick: 0 };
+  sim.events.emit('crookWave', wave);
+  expect(hits).toBe(0);
+  sim.events.emit('crookWave', { ...wave, dirZ: -1 });
+  expect(hits).toBe(1);
+  expect(sim.world.impulseJoints.len()).toBe(10);
+  for (let i = 0; i < 60; i++) sim.world.step();
+  sim.tick += 60;
+  ragdolls.pose();
+  expect(hips.position.distanceTo(rest)).toBeGreaterThan(0.5);
+  ragdolls.restoreAnimation();
+  sim.tick += 200;
+  ragdolls.pose();
+  expect(hips.position.distanceTo(rest)).toBeLessThan(0.001);
+  expect(sim.world.impulseJoints.len()).toBe(0);
+  sim.world.free();
 });

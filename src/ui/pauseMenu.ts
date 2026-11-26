@@ -22,7 +22,7 @@ const KEYBOARD: Group[] = [
       [['W', 'A', 'S', 'D'], 'Walk', 'or the arrow keys'],
       [['Shift'], 'Sprint'],
       [['Ctrl', 'C'], 'Sneak'],
-      [['N'], 'Rest or sleep', 'once the day’s work is done'],
+      [['N'], 'Rest until morning'],
       [['Mouse'], 'Look around', 'click the view to capture the mouse'],
       [['Wheel'], 'Zoom the camera'],
       [['E'], 'Interact · talk to villagers · watch wildlife', 'hold E for longer jobs'],
@@ -31,11 +31,15 @@ const KEYBOARD: Group[] = [
   {
     title: 'Flock & dog',
     rows: [
-      [['Left click'], 'Swing the crook'],
+      [['Left click'], 'Swing the cane · knock villagers over or move sheep'],
       [['Right click'], 'Call the flock'],
       [['Q'], 'Whistle wheel', 'hold and flick toward a command · tap to repeat the last'],
       [['X'], 'Hush the flock', 'hold'],
     ],
+  },
+  {
+    title: 'Cars, vans and tractors',
+    rows: [[['Y'], 'Take a nearby vehicle'], [['W', 'S'], 'Drive · brake and reverse'], [['A', 'D'], 'Steer'], [['E'], 'Get off']],
   },
   {
     title: 'Motorcycle',
@@ -55,7 +59,7 @@ const KEYBOARD: Group[] = [
       [['T'], 'Look at the watch', 'hold'],
       [['M'], 'Paper map'],
       [['G'], 'Read the land', 'hold'],
-      [['J'], 'Journal'],
+      [['J'], 'Valley activities · jobs and directions'],
       [['1', '2', '3'], 'Use a satchel pocket'],
       [['P'], 'Pack the satchel', 'at home'],
       [['V'], 'Sling'],
@@ -86,11 +90,15 @@ const GAMEPAD: Group[] = [
   {
     title: 'Flock & dog',
     rows: [
-      [['RT'], 'Swing the crook'],
+      [['RT'], 'Swing the cane · knock villagers over or move sheep'],
       [['LT'], 'Call the flock'],
       [['LB'], 'Whistle wheel', 'hold, pick with the right stick · tap to repeat'],
       [['R3'], 'Hush the flock', 'hold'],
     ],
+  },
+  {
+    title: 'Cars, vans and tractors',
+    rows: [[['B'], 'Take a nearby vehicle'], [['RT', 'LT'], 'Drive · brake and reverse'], [['Left stick'], 'Steer'], [['A'], 'Hold to get off']],
   },
   {
     title: 'Motorcycle',

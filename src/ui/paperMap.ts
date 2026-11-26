@@ -11,7 +11,6 @@ import type { EventBus } from '../core/events';
 import type { Sim } from '../sim';
 import { GrassMap } from '../world/grassMap';
 import { activeMap, layout, type BoxProp, type CylProp } from '../world/map';
-import { visibleMarks } from '../world/mapTypes';
 
 const SIZE = 900;
 /** Px per metre: 2.1 on the 400 m test map, the whole map always fits the sheet. */
@@ -22,7 +21,7 @@ const py = (z: number) => SIZE / 2 + z * SCALE;
 const INK = 'rgba(70, 52, 36, 0.85)';
 const PENCIL = 'rgba(80, 64, 48, 0.55)';
 
-export const mapSettings = { showMyPosition: false };
+export const mapSettings = { showMyPosition: true };
 
 /** Pencil marks belong to one map: the test map keeps its old keys. */
 const storeKey = (k: string) => (activeMap().id === 'test' ? `coban.${k}` : `coban.${activeMap().id}.${k}`);
@@ -506,18 +505,20 @@ export class PaperMap {
       g.fill();
     }
 
-    // The current task's destination: a pencil circle.
-    const target = sim.tasks.enabled && !sim.tasks.finished ? sim.tasks.current.target : undefined;
-    if (target) {
-      g.strokeStyle = 'rgba(70, 50, 120, 0.7)';
-      g.lineWidth = 2;
-      g.beginPath();
-      g.ellipse(px(target.x), py(target.z), 13, 11, 0.2, 0.3, Math.PI * 2.1);
-      g.stroke();
-      g.font = `italic 13px Georgia, serif`;
-      g.fillStyle = 'rgba(70, 50, 120, 0.85)';
-      g.textAlign = 'left';
-      g.fillText(target.label, px(target.x) + 16, py(target.z) - 8);
+    const marker = (x: number, z: number, label: string, color: string, offset: number) => {
+      g.fillStyle = color;
+      g.fillRect(px(x) - 3, py(z) - 3, 6, 6);
+      g.textAlign = 'right';
+      g.font = 'bold 13px Georgia, serif';
+      g.fillText(label, px(x) - 7, py(z) + offset);
+    };
+    if (sim.notesRead.has('museum1')) marker(-170, 40, 'Old Roman road', INK, 0);
+    if (sim.notesRead.has('museum2')) marker(layout.ruins.x - 30, layout.ruins.z - 40, 'Sacred spring', INK, 0);
+    if (sim.notesRead.has('museum3')) marker(layout.hill.x + 30, layout.hill.z - 10, 'Ancient fold', INK, 0);
+    marker(sim.bike.x, sim.bike.z, 'Your motorcycle', '#3f6172', -10);
+    if (sim.sprint) {
+      const gate = sim.sprint.marker;
+      marker(gate.x, gate.z, gate.label, '#885322', 16);
     }
 
     // Active errands are small green diamonds beside the main task's pencil circle.
@@ -540,49 +541,6 @@ export class PaperMap {
       g.textAlign = left ? 'right' : 'left';
       g.fillStyle = '#365540';
       g.fillText(errand.title, x + sign * 9, z + 15);
-    }
-
-    // Uncle Ahmet's hand: soft grey graphite, a slanting script, his old routes dotted.
-    // What he knew from the start is there on the first morning; his notes add the rest.
-    const AHMET = 'rgba(52, 56, 74, 0.85)';
-    const hand = (size: number) => `${size}px 'Bradley Hand', 'Noteworthy', 'Segoe Print', 'Comic Sans MS', cursive`;
-    const written = (text: string, x: number, z: number, rot = 0, size = 16) => {
-      g.save();
-      g.translate(px(x), py(z));
-      g.rotate(rot);
-      g.font = hand(size);
-      g.fillStyle = AHMET;
-      g.textAlign = 'center';
-      g.fillText(text, 0, 0);
-      g.restore();
-    };
-    g.strokeStyle = AHMET;
-    g.lineWidth = 1.3;
-    for (const m of visibleMarks(activeMap().pencil ?? [], sim.notesRead)) {
-      if (m.kind === 'route') {
-        g.setLineDash([2, 5]);
-        g.beginPath();
-        m.pts.forEach((q, i) => (i ? g.lineTo(px(q.x), py(q.z)) : g.moveTo(px(q.x), py(q.z))));
-        g.stroke();
-        g.setLineDash([]);
-      } else if (m.kind === 'text') written(m.text, m.x, m.z, m.rot);
-      else if (m.kind === 'circle') {
-        g.beginPath();
-        // A hand-drawn loop: slightly wobbly, not quite closed.
-        for (let k = 0; k <= 40; k++) {
-          const a = (k / 40) * Math.PI * 2.08;
-          const r = m.r * (1 + 0.05 * Math.sin(a * 3 + m.x));
-          const X = px(m.x + Math.cos(a) * r);
-          const Y = py(m.z + Math.sin(a) * r);
-          if (k) g.lineTo(X, Y);
-          else g.moveTo(X, Y);
-        }
-        g.stroke();
-        if (m.text) written(m.text, m.x, m.z - m.r - 6, -0.04, m.text.length < 3 ? 22 : 15);
-      } else {
-        g.strokeRect(px(m.xMin), py(m.zMin), (m.xMax - m.xMin) * SCALE, (m.zMax - m.zMin) * SCALE);
-        if (m.text) written(m.text, (m.xMin + m.xMax) / 2, m.zMax + 14, 0.03, 13);
-      }
     }
 
     // Your pencilled routes.

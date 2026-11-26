@@ -1,3 +1,6 @@
+import { ValleySprint } from './bike/valleySprint';
+import { vehicleSpecs, type RoadVehicle } from './life/roadVehicle';
+import { emptyFrame } from './core/input';
 // The simulation: everything that advances in fixed steps. Headless (no DOM, no
 // three.js), so tests can run it in Node and replays can re-run it exactly.
 
@@ -12,9 +15,6 @@ import { DogCare } from './dog/care';
 import { Kangal } from './dog/kangal';
 import { Flock } from './flock/flock';
 import { Wolves, type Wolf } from './predators/wolf';
-import { DAY1 } from './tasks/day1';
-import { day2Plan } from './tasks/day2';
-import { DAY3 } from './tasks/day3';
 import { TaskSystem, type TaskDef } from './tasks/taskSystem';
 import type { Sheep } from './flock/sheep';
 import { rng } from './world/noise';
@@ -24,7 +24,6 @@ import { Obstacles } from './world/obstacles';
 import { createPhysicsWorld, type Rapier } from './world/physics';
 import type { Terrain } from './world/terrain';
 import { activeMap, buildProps, buildTerrain, inYard, insideFold, insidePen, layout, type MapProps } from './world/map';
-import type { AhmetNote } from './world/mapTypes';
 import { RACK_CANS, WaterSupply } from './world/water';
 import { ITEMS, Satchel } from './player/satchel';
 import { Works, type WorkSite } from './world/works';
@@ -34,7 +33,6 @@ import { BikeCare } from './bike/care';
 import { ARTIFACTS, Economy, GOODS, HERBS, JOBS, MUSEUM_LORE, RUMOURS, UPGRADES, type ArtifactKind, type ShopId, type UpgradeId } from './economy/economy';
 import { isThursday, season } from './economy/calendar';
 import type { TradeRequest } from './core/input';
-import { DAY4, FREE_DAY } from './tasks/day4';
 import { Residents, type Resident } from './life/residents';
 import { Wildlife, wildlifeNames } from './life/wildlife';
 import { Errands, type ErrandTarget } from './life/errands';
@@ -114,6 +112,8 @@ export class Sim {
   tasks!: TaskSystem;
   bike!: Bike;
   lap!: LapTimer;
+  sprint?: ValleySprint;
+  private readonly vehicleBodies = new Map<Resident, RAPIERType.Collider>();
   private bikeBody!: RAPIERType.RigidBody;
   private bikeCollider!: RAPIERType.Collider;
   private rand!: () => number;
@@ -165,7 +165,7 @@ export class Sim {
   finds: { id: number; kind: ArtifactKind; value: number; x: number; z: number }[] = [];
   private findSeq = 0;
   private weatherRand!: () => number;
-  /** Uncle Ahmet's notes the shepherd has read (note ids). */
+  /** Map annotations earned by donating finds to the museum. */
   readonly notesRead = new Set<string>();
   /** Places reached for the first time (layout.places ids). */
   readonly visited = new Set<string>();
@@ -177,7 +177,11 @@ export class Sim {
   /** In-game hour, 0..24. */
   hour = config.time.startHour;
 
-  constructor(private R: Rapier, terrain?: Terrain) {
+  drivenVehicle: RoadVehicle | null = null;
+
+  get freeRoam(): boolean { return !this.scenarioDay; }
+
+  constructor(private R: Rapier, terrain?: Terrain, private scenarioDay?: (day: number) => TaskDef[]) {
     this.terrain = terrain ?? buildTerrain();
     this.map = buildProps(this.terrain);
     this.obstacles = new Obstacles(this.map);
@@ -191,7 +195,10 @@ export class Sim {
     this.world = world;
     this.terrainCollider = terrainCollider;
     this.gateCollider = gateCollider;
-    const s = layout.spawn;
+    const village = this.freeRoam ? layout.village : undefined;
+    const s = village ? { x: village.x - 6, z: village.z + 5 } : layout.spawn;
+    this.drivenVehicle = null;
+    this.vehicleBodies.clear();
     this.player = new PlayerController(this.R, world, this.events, {
       x: s.x,
       y: this.terrain.heightAt(s.x, s.z) + 0.05,
@@ -202,7 +209,7 @@ export class Sim {
     this.flock?.dispose();
     this.flock = new Flock(this.terrain, this.grass, this.obstacles, this.events, config.flock.count);
     this.rand = rng(99);
-    this.dog = new Kangal(layout.dogSpawn.x, layout.dogSpawn.z, this.terrain, this.obstacles, this.events);
+    this.dog = new Kangal(village ? s.x - 2 : layout.dogSpawn.x, village ? s.z + 2 : layout.dogSpawn.z, this.terrain, this.obstacles, this.events);
     this.dog.care = new DogCare(yardLayout(layout).bowl);
     this.wolves?.dispose();
     this.wolves = new Wolves(this.terrain, this.obstacles, this.events);
@@ -213,18 +220,21 @@ export class Sim {
     this.dialogue = null;
     this.hornTime = 0;
     this.observed = null;
-    const bs = layout.bikeSpawn;
+    const bs = village ? { x: s.x + 3, z: s.z + 2, headingDeg: 145 } : layout.bikeSpawn;
     this.bike = new Bike(bs.x, bs.z, (bs.headingDeg * Math.PI) / 180, this.terrain, this.obstacles, this.events);
     this.bikeBody = world.createRigidBody(this.R.RigidBodyDesc.kinematicPositionBased());
     this.bikeCollider = world.createCollider(this.R.ColliderDesc.cuboid(0.3, 0.5, 0.95), this.bikeBody);
     this.syncBikeBody(true);
     this.lap = new LapTimer();
+    this.sprint = village ? new ValleySprint() : undefined;
     this.tasks?.dispose();
-    this.tasks = new TaskSystem(this, DAY1);
+    this.tasks = new TaskSystem(this, this.scenarioDay?.(1) ?? []);
+    this.tasks.enabled = !this.freeRoam;
     this.setGate(false);
     this.tick = 0;
-    this.hour = config.time.startHour;
+    this.hour = this.freeRoam ? 7 : config.time.startHour;
     this.residents.setTime(this.hour);
+    this.syncVehicles();
     this.sunsetTallies.clear();
     this.goldenHourAnnounced = false;
     this.nightProbe = null;
@@ -578,11 +588,12 @@ export class Sim {
     this.closeDialogue();
     if (this.nightProbe) this.wolves.retire(this.nightProbe);
     this.tasks.dispose();
-    const plan = day === 1 ? DAY1 : day === 2 ? day2Plan() : day === 3 ? DAY3 : day === 4 ? DAY4 : FREE_DAY;
+    const plan = this.scenarioDay?.(day) ?? [];
     const report = this.nightReports.get(day - 1);
     const lost = report ? this.scatteredLastNight.filter((s) => this.flock.sheep.includes(s) && s.scattered) : [];
-    this.tasks = new TaskSystem(this, lost.length ? [this.findScatteredTask(lost), ...plan] : plan, day);
-    this.hour = config.time.startHour;
+    this.tasks = new TaskSystem(this, !this.freeRoam && lost.length ? [this.findScatteredTask(lost), ...plan] : plan, day);
+    this.tasks.enabled = !this.freeRoam;
+    this.hour = this.freeRoam ? 7 : config.time.startHour;
     this.residents.setTime(this.hour);
     this.errands.cancelWork();
     this.goldenHourAnnounced = false;
@@ -607,7 +618,7 @@ export class Sim {
   }
 
   get firstNightPending(): boolean {
-    return this.tasks.day === 1 && this.tasks.enabled && !this.nightProbe;
+    return !this.freeRoam && this.tasks.day === 1 && this.tasks.enabled && !this.nightProbe;
   }
 
   private startFirstNight(): void {
@@ -815,27 +826,6 @@ export class Sim {
     return { x: h.x, z: h.z - h.hz - 0.8 };
   }
 
-  /** Uncle Ahmet's note within reach, if any (the nearest). */
-  noteNear(x: number, z: number): AhmetNote | null {
-    let best: AhmetNote | null = null;
-    let bd: number = config.notes.reach;
-    for (const n of activeMap().notes ?? []) {
-      const d = Math.hypot(n.x - x, n.z - z);
-      if (d < bd) {
-        bd = d;
-        best = n;
-      }
-    }
-    return best;
-  }
-
-  /** Read a note: it adds his marks to the map the first time. */
-  readNote(id: string): void {
-    const first = !this.notesRead.has(id);
-    this.notesRead.add(id);
-    this.events.emit('noteRead', { id, first });
-  }
-
   nearDoor(x: number, z: number): boolean {
     return Math.hypot(x - this.doorPos.x, z - this.doorPos.z) < 1.8;
   }
@@ -854,11 +844,30 @@ export class Sim {
       this.events.emit('restedUntilDark', { day: this.tasks.day });
       return false;
     }
-    this.resolveNight();
+    if (this.freeRoam) this.refreshFreeRoamDay();
+    else this.resolveNight();
     const next = this.tasks.day + 1;
     this.startDay(next);
     this.events.emit('slept', { day: next });
     return true;
+  }
+
+  private refreshFreeRoamDay(): void {
+    this.sourMilk();
+    this.economy.milkQuality = this.milkQuality();
+    for (const wheel of this.economy.cheese) wheel.age++;
+    const care = this.dog.care.night(this.atHome);
+    this.dog.bond = Math.max(0, Math.min(100, this.dog.bond + care.bondChange));
+    for (const sheep of this.flock.sheep) {
+      sheep.condition = Math.min(100, sheep.condition + (sheep.inPen ? config.condition.nightPenned : config.condition.nightOut)
+        + (this.economy.tonic ? config.village.vet.tonicCondition : 0));
+    }
+    this.economy.tonic = false;
+    this.saltLick = null;
+    this.dog.wound = Math.max(0, this.dog.wound - config.dogInjury.healPerNight);
+    this.water.rain(config.works.cisternRain);
+    if (this.weatherRand() < config.economy.rainChance) this.washOutFinds();
+    this.goldenHourAnnounced = false;
   }
 
   /** Unsold milk turns by evening. */
@@ -888,6 +897,7 @@ export class Sim {
     e.ledger.splice(0, e.ledger.length, ...d.economy.ledger);
     e.loadExtra(d.economy.extra ?? {});
     this.errands.load(d.errands);
+    if (this.sprint) this.sprint.best = d.sprintBest ?? 0;
     this.finds = ((d.economy.extra?.finds as typeof this.finds | undefined) ?? []).map((f) => ({ ...f, id: this.findSeq++ }));
 
     // A saved position can overlap a building or fixture added to the village since the save.
@@ -964,7 +974,7 @@ export class Sim {
     for (const w of d.water) this.water.restore(w.kind as never, w.name, w.x, w.z, w.radius, w.liters, w.capacity);
 
     this.satchel.slots = d.satchel.map((s) => ({ id: s.id, uses: s.uses < 0 ? Infinity : s.uses }));
-    for (const n of d.notesRead) this.notesRead.add(n);
+    for (const n of d.notesRead) if (n.startsWith('museum')) this.notesRead.add(n);
     for (const i of d.signsSeen) this.signsSeen.add(i);
     for (const v of d.visited) this.visited.add(v);
     this.sleptAt = d.sleptAt;
@@ -975,12 +985,17 @@ export class Sim {
     if (d.midday) {
       // Part-way through the day: the clock, the tasks done, and the satchel as it was
       // (waking at home refills it; coming back at noon doesn't).
-      this.hour = Math.min(d.midday.hour, SUNSET_HOUR + 0.5);
+      this.hour = this.freeRoam ? d.midday.hour % 24 : Math.min(d.midday.hour, SUNSET_HOUR + 0.5);
       this.goldenHourAnnounced = this.hour >= GOLDEN_HOUR;
-      this.tasks.resumeAt(d.midday.task, d.midday.done, d.midday.t);
+      if (!this.freeRoam) this.tasks.resumeAt(d.midday.task, d.midday.done, d.midday.t);
       this.satchel.slots = d.satchel.map((s) => ({ id: s.id, uses: s.uses < 0 ? Infinity : s.uses }));
     }
     this.residents.setTime(this.hour);
+    for (const resident of this.residents.list) {
+      const parking = d.vehicles?.[resident.id] ?? d.tractors?.[resident.id];
+      if (parking && resident.driving) resident.releaseVehicle(parking);
+    }
+    this.syncVehicles();
     const spot = clearVillageSpot(d.player, config.player.capsuleRadius);
     this.teleport(spot.x, spot.z);
     this.events.emit('loaded', { day: d.day, hour: d.midday ? this.hour : undefined });
@@ -1178,7 +1193,68 @@ export class Sim {
   }
 
   get riding(): boolean {
-    return this.bike.rider;
+    return this.bike.rider || !!this.drivenVehicle;
+  }
+
+  get vehicleNear(): Resident | undefined {
+    if (this.riding || this.brewing > 0) return;
+    const p = this.player.pos;
+    let closest: Resident | undefined;
+    let reach = 3.2;
+    for (const owner of this.residents.list) {
+      if (!owner.vehicle && (!owner.driving || owner.down)) continue;
+      const t = owner.vehicle ?? owner;
+      const d = Math.hypot(t.x - p.x, t.z - p.z);
+      if (d < reach && Math.abs(t.y - p.y) < 1.8 && !this.obstacles.blocked((p.x + t.x) / 2, (p.z + t.z) / 2, 0.15)) {
+        closest = owner;
+        reach = d;
+      }
+    }
+    return closest;
+  }
+
+  private syncVehicles(): void {
+    for (const owner of this.residents.list) {
+      if (!owner.driving && !owner.vehicle) continue;
+      const vehicle = owner.vehicle ?? owner;
+      const spec = vehicleSpecs[owner.vehicleKind];
+      let collider = this.vehicleBodies.get(owner);
+      if (!collider) {
+        const body = this.world.createRigidBody(this.R.RigidBodyDesc.kinematicPositionBased());
+        collider = this.world.createCollider(this.R.ColliderDesc.cuboid(spec.width, spec.height, spec.length), body);
+        this.vehicleBodies.set(owner, collider);
+      }
+      const body = collider.parent()!;
+      body.setTranslation({ x: vehicle.x, y: vehicle.y + spec.height + 0.03, z: vehicle.z }, true);
+      body.setRotation({ x: 0, y: Math.sin(vehicle.yaw / 2), z: 0, w: Math.cos(vehicle.yaw / 2) }, true);
+      collider.setEnabled(!owner.vehicle?.occupied);
+    }
+  }
+
+  private boardVehicle(owner: Resident): void {
+    this.closeDialogue();
+    this.releaseRope();
+    const attended = owner.driving;
+    const speed = owner.speed;
+    this.drivenVehicle = owner.releaseVehicle();
+    if (attended) {
+      this.drivenVehicle.speed = speed;
+      this.residents.reactToTheft(owner, this.drivenVehicle);
+    }
+    this.drivenVehicle.occupied = true;
+    this.player.collider.setEnabled(false);
+  }
+
+  private leaveVehicle(): void {
+    const t = this.drivenVehicle!;
+    const spot = t.beside();
+    if (!spot) return;
+    t.speed = 0;
+    t.occupied = false;
+    t.px = t.x; t.py = t.y; t.pz = t.z; t.previousYaw = t.yaw;
+    this.drivenVehicle = null;
+    this.player.collider.setEnabled(true);
+    this.teleport(spot.x, spot.z);
   }
 
   nearBike(x: number, z: number): boolean {
@@ -1187,7 +1263,7 @@ export class Sim {
 
   mount(): void {
     const b = this.bike;
-    if (b.state !== 'parked' || b.rider) return;
+    if (b.state !== 'parked' || this.riding) return;
     b.rider = true;
     b.state = 'riding';
     b.course = b.heading;
@@ -1206,6 +1282,15 @@ export class Sim {
       b.u = 0;
       b.stopEngine('off', this.tick);
     }
+    const { x, z } = this.bikeExit;
+    this.player.collider.setEnabled(true);
+    this.syncBikeBody(true);
+    this.teleport(x, z);
+    this.events.emit('bikeMount', { on: false, tick: this.tick });
+  }
+
+  get bikeExit() {
+    const b = this.bike;
     const sx = Math.cos(b.heading);
     const sz = -Math.sin(b.heading);
     const side = b.state === 'fallen' ? -b.fallSide : 1;
@@ -1215,10 +1300,7 @@ export class Sim {
       px = b.x - sx * 1.3 * side;
       pz = b.z - sz * 1.3 * side;
     }
-    this.player.collider.setEnabled(true);
-    this.syncBikeBody(true);
-    this.teleport(px, pz);
-    this.events.emit('bikeMount', { on: false, tick: this.tick });
+    return { x: px, z: pz };
   }
 
   /** At home: in the yard or at the door (where the satchel can be repacked). */
@@ -1444,6 +1526,23 @@ export class Sim {
   step(f: InputFrame): void {
     const p = this.player;
     const b = this.bike;
+    const honk = f.horn;
+    const nearby = f.takeVehicle ? this.vehicleNear : undefined;
+    if (this.drivenVehicle || nearby) {
+      if (nearby) this.boardVehicle(nearby);
+      else if (f.takeVehicle || f.interact) this.leaveVehicle();
+      const t = this.drivenVehicle;
+      if (t) {
+        const others = this.residents.list.filter(r => r.driving || (r.vehicle && r.vehicle !== t)).map(r => r.vehicle ?? r);
+        t.step(SIM_DT, f, [b, ...others]);
+        if (f.horn) {
+          this.hornTime = 1;
+          this.events.emit('bikeHorn', { x: t.x, z: t.z, tick: this.tick });
+        }
+      }
+      // The vehicle consumes this frame, including the button used to step off.
+      f = emptyFrame(f.camYaw);
+    }
     // Sitting over çay: no walking off.
     if (this.brewing > 0) f = { ...f, moveX: 0, moveY: 0, sprint: false, crook: false, call: false, sling: false, item: -1, cairn: false };
     if (f.pack && !b.rider && this.atHome) {
@@ -1537,15 +1636,16 @@ export class Sim {
     }
     this.syncBikeBody();
 
-    if (b.rider) {
+    if (b.rider || this.drivenVehicle) {
       // The shepherd sits on the bike: his body rides along, his own controller rests.
       const half = config.player.capsuleHalfHeight + config.player.capsuleRadius;
       p.prev = { x: p.pos.x, y: p.pos.y, z: p.pos.z, yaw: p.yaw };
-      p.body.setNextKinematicTranslation({ x: b.x, y: b.y + half, z: b.z });
-      p.vel.x = b.vx;
-      p.vel.z = b.vz;
+      const vehicle = this.drivenVehicle ?? b;
+      p.body.setNextKinematicTranslation({ x: vehicle.x, y: vehicle.y + half, z: vehicle.z });
+      p.vel.x = (vehicle.x - vehicle.px) / SIM_DT;
+      p.vel.z = (vehicle.z - vehicle.pz) / SIM_DT;
       p.gait = 'idle';
-      p.yaw = b.heading + Math.PI;
+      p.yaw = (this.drivenVehicle?.yaw ?? b.heading) + Math.PI;
       this.world.step();
       p.postStep();
     } else {
@@ -1553,18 +1653,13 @@ export class Sim {
       this.world.step();
       p.postStep();
     }
+    const raceMessage = this.sprint?.step(SIM_DT, this.riding ? p.pos : null, honk);
+    if (raceMessage) this.events.emit('sprintUpdate', { text: raceMessage });
     const lapTime = this.lap.update(SIM_DT, b.rider && b.state === 'riding', b.x, b.z);
     if (lapTime >= 0) this.events.emit('lap', { seconds: lapTime, clean: this.lap.lastClean, best: this.lap.best, tick: this.tick });
 
     if (f.command) this.giveCommand(f.command, f.camYaw);
 
-    // Uncle Ahmet's notes: an unread note comes before the bed (the letter lies on the
-    // porch table by the door); one already read is only picked up again if nothing else wants E.
-    const note = f.interact && !usedInteract && !b.rider ? this.noteNear(p.pos.x, p.pos.z) : null;
-    if (note && !this.notesRead.has(note.id)) {
-      this.readNote(note.id);
-      usedInteract = true;
-    }
     // A shop counter in the village: E opens the counter (the shop card).
     const shop = f.interact && !usedInteract && !b.rider ? this.shopNear(p.pos.x, p.pos.z) : null;
     if (shop) {
@@ -1654,16 +1749,11 @@ export class Sim {
     const atBed = f.interact && !usedInteract && !b.rider && (this.nearDoor(p.pos.x, p.pos.z) || this.works.nearHutDoor(p.pos.x, p.pos.z));
     if (atBed || f.rest) this.sleep();
     usedInteract ||= atBed;
-    if (note && !usedInteract) {
-      this.readNote(note.id);
-      usedInteract = true;
-    }
-
     // Petting: E next to the dog, unless the gate, a stuck sheep or the bike needs the hands.
     const dog = this.dog;
     const dogDist = Math.hypot(dog.x - p.pos.x, dog.z - p.pos.z);
     const resident = this.dialogue?.resident;
-    if (resident && (b.rider || this.brewing > 0 || f.hush || f.rest || !resident.withinConversation(p.pos))) this.closeDialogue();
+    if (resident && (resident.down || this.riding || this.brewing > 0 || f.hush || f.rest || !resident.withinConversation(p.pos))) this.closeDialogue();
     if (usedInteract && f.interact) this.closeDialogue();
     if (this.dialogue && f.dialogue && (!f.interact || !usedInteract)) {
       this.reply(f.dialogue);
@@ -1782,9 +1872,11 @@ export class Sim {
     this.hornTime = Math.max(0, this.hornTime - SIM_DT);
     const honking = this.hornTime > 0;
     this.residents.step(SIM_DT, {
-      player: p.pos, playerSpeed: Math.hypot(p.vel.x, p.vel.z), rider: b.rider,
+      player: p.pos, playerSpeed: Math.hypot(p.vel.x, p.vel.z), rider: this.riding,
       dog, bike: b, sheep: this.flock.sheep, hour: this.hour, honking,
     });
+    this.syncVehicles();
+    this.events.emit('roadVehicleStep', { vehicle: this.drivenVehicle });
     this.wildlife.step(SIM_DT, {
       player: p.pos, gait: p.gait, dog, dogRunning: dog.running || dog.charging,
       bike: b, bikeRunning: b.engineOn, honking, hour: this.hour,
@@ -1799,11 +1891,15 @@ export class Sim {
     const previousHour = this.hour;
     const nextHour = previousHour + hours;
     this.hour = nextHour % 24;
+    if (this.freeRoam && nextHour >= 24) {
+      this.refreshFreeRoamDay();
+      this.tasks.day++;
+    }
     if (!this.goldenHourAnnounced && previousHour < GOLDEN_HOUR && nextHour >= GOLDEN_HOUR) {
       this.goldenHourAnnounced = true;
       this.events.emit('goldenHour', { day: this.tasks.day });
     }
-    if (previousHour < SUNSET_HOUR && nextHour >= SUNSET_HOUR) this.recordSunset();
+    if (!this.freeRoam && previousHour < SUNSET_HOUR && nextHour >= SUNSET_HOUR) this.recordSunset();
     if (previousHour < config.economy.milkSoursAt && nextHour >= config.economy.milkSoursAt) this.sourMilk();
     if (this.firstNightPending && previousHour < FIRST_NIGHT_HOUR && nextHour >= FIRST_NIGHT_HOUR) {
       this.startFirstNight();

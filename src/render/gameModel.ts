@@ -11,6 +11,10 @@ export async function loadGameModel(filename: string): Promise<THREE.Group> {
   const sourceMaterials = new Set<THREE.Material>();
   scene.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
+    if (node.userData.vehicleGlass) {
+      node.material.depthWrite = false;
+      return;
+    }
     sourceMaterials.add(node.material as THREE.Material);
     if (node instanceof THREE.SkinnedMesh) {
       skinPaint ??= toonMaterial({ vertexColors: true, side: THREE.DoubleSide });

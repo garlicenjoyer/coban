@@ -50,7 +50,7 @@ export class CameraRig {
    */
   update(
     target: THREE.Vector3, input: Input, dt: number,
-    bike?: { heading: number; speed: number; lean: number } | null,
+    bike?: { heading: number; speed: number; lean: number; clearance?: number } | null,
     speaker?: { x: number; y: number; z: number },
   ): void {
     const c = config.camera;
@@ -70,7 +70,7 @@ export class CameraRig {
       this.yaw += d * Math.min(1, dt * (1 + Math.min(1, bike.speed / 4) * 2.5));
       this.pitch += (14 * DEG - this.pitch) * Math.min(1, dt * 1.5);
     }
-    if (bike) this.zoom = Math.max(c.distance, 5 + bike.speed * 0.08);
+    if (bike) this.zoom = Math.max(c.distance, 5 + bike.speed * 0.08) + (bike.clearance ?? 0);
     const frameSpeaker = speaker && !bike && !this.reducedMotion.matches && this.sinceLook > 0.7;
     this.conversationBlend += (Number(!!frameSpeaker) - this.conversationBlend) * (1 - Math.exp(-dt * 4));
     if (frameSpeaker) {
@@ -91,7 +91,7 @@ export class CameraRig {
     const bz = cy * cp;
 
     const shoulder = bike ? 0 : c.shoulder;
-    this.pivot.set(target.x + cy * shoulder, target.y + c.height + (bike ? 0.2 : 0), target.z - sy * shoulder);
+    this.pivot.set(target.x + cy * shoulder, target.y + c.height + (bike ? 0.2 + (bike.clearance ?? 0) : 0), target.z - sy * shoulder);
     const blend = this.conversationBlend * 0.62;
     this.pivot.x = THREE.MathUtils.lerp(this.pivot.x, this.conversationTarget.x, blend);
     this.pivot.y = THREE.MathUtils.lerp(this.pivot.y, this.conversationTarget.y + 1.15, blend);

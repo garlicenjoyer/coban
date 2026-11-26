@@ -94,7 +94,8 @@ export class ResidentDialogueView {
     if (changed) {
       const { resident, offer, text } = dialogue;
       this.root.dataset.resident = resident.id;
-      this.portrait.src = `${import.meta.env.BASE_URL}portraits/${resident.id}.jpg`;
+      this.portrait.hidden = resident.circulates;
+      if (!this.portrait.hidden) this.portrait.src = `${import.meta.env.BASE_URL}portraits/${resident.id}.jpg`;
       this.title.textContent = resident.profile.name;
       this.trade.textContent = resident.profile.trade;
       this.line.textContent = text;

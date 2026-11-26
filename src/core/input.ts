@@ -47,6 +47,7 @@ export interface InputFrame {
   /** Riding: weight fore (+1) / aft (-1). */
   weightShift: number;
   /** Edge-triggered riding actions. */
+  takeVehicle: boolean;
   kick: boolean;
   horn: boolean;
   /** Lantern on foot, headlamp while riding. */
@@ -84,6 +85,7 @@ export const emptyFrame = (camYaw = 0): InputFrame => ({
   brake: 0,
   steer: 0,
   weightShift: 0,
+  takeVehicle: false,
   kick: false,
   horn: false,
   lamp: false,
@@ -116,7 +118,7 @@ export interface WheelState {
 
 export class Input {
   private keys = new Set<string>();
-  private latched = { crook: false, call: false, interact: false, rest: false, water: false, kick: false, horn: false, lamp: false, sling: false };
+  private latched = { takeVehicle: false, crook: false, call: false, interact: false, rest: false, water: false, kick: false, horn: false, lamp: false, sling: false };
   private latchedItem = -1;
   private latchedPack: ItemId[] | null = null;
   private latchedTrade: TradeRequest | null = null;
@@ -154,6 +156,7 @@ export class Input {
       if (e.repeat) return;
       this.keys.add(e.code);
       this.lastDevice = 'keyboard';
+      if (e.code === 'KeyY' && !this.uiCapture) this.latched.takeVehicle = true;
       if (e.code === 'KeyE') this.latched.interact = true;
       if (e.code === 'KeyN') this.latched.rest = true;
       if (e.code === 'KeyR') this.latched.water = true;
@@ -410,7 +413,10 @@ export class Input {
         }
         if (edge(1)) this.latchedDialogue = 'leave';
       } else {
-        if (edge(1)) this.latched.horn = true; // B / Circle
+        if (edge(1)) {
+          if (this.riding) this.latched.horn = true;
+          else this.latched.takeVehicle = true;
+        } // B / Circle
         if (edge(12)) this.latched.lamp = true; // D-pad up
       }
       if (edge(GP.RB)) this.latched.water = true;
@@ -452,6 +458,8 @@ export class Input {
 
     f.command = this.latchedCommand;
     this.latchedCommand = null;
+    f.takeVehicle = this.latched.takeVehicle;
+    this.latched.takeVehicle = false;
     f.kick = this.latched.kick;
     f.horn = this.latched.horn;
     f.lamp = this.latched.lamp;

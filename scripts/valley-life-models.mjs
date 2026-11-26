@@ -2,6 +2,7 @@ import { CylinderGeometry, DodecahedronGeometry, Group } from 'three';
 import { group, Parts } from './model-parts.mjs';
 import { crate } from './village-market.mjs';
 import { villagerModel } from './villager-models.mjs';
+import { villageVehicles } from './village-vehicles.mjs';
 import { villageCatModels } from './village-cat-models.mjs';
 
 const charcoal = '#373632';
@@ -284,6 +285,7 @@ export function valleyLifeModels() {
   });
   tractor(catalogue, 'Rust Tractor', '#9f5340', '#bf7955', 'emre');
   tractor(catalogue, 'Blue Tractor', '#537b87', '#779897', 'zeynep');
+  villageVehicles(catalogue);
   errandProps(catalogue);
   return catalogue;
 }

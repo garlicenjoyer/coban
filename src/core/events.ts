@@ -1,7 +1,10 @@
 // Tiny typed event bus. Systems publish facts; other systems (flock, dog, audio)
 // subscribe without importing each other.
 
+import type { RoadVehicle } from '../life/roadVehicle';
 import type { DogCommand } from '../dog/commands';
+import type { ResidentSpeech } from '../life/residentSpeech';
+import type { ResidentId } from '../world/mapTypes';
 import type { WorkSound } from '../life/residentWork';
 
 export interface Vec3Like {
@@ -59,6 +62,7 @@ export interface GameEvents {
   bikeHorn: { x: number; z: number; tick: number };
   bikeThunk: { strength: number; tick: number };
   bikeMount: { on: boolean; tick: number };
+  sprintUpdate: { text: string };
   lap: { seconds: number; clean: boolean; best: number; tick: number };
   /** A wolf reached a sheep. */
   wolfBite: { sheep: number; tick: number };
@@ -114,10 +118,11 @@ export interface GameEvents {
   territoryWarn: { day: number };
   /** First time the flock (or the shepherd) reaches a place. */
   arrival: { place: string; label: string };
-  /** The shepherd read one of Uncle Ahmet's notes (first time, or again). */
-  noteRead: { id: string; first: boolean };
   /** Karabaş was bitten driving off a wolf. */
   dogHurt: { tick: number };
+  vehicleTaken: Vec3Like;
+  roadVehicleStep: { vehicle: RoadVehicle | null };
+  residentShout: Vec3Like & { resident: ResidentId; speech: ResidentSpeech };
   encounter: { name: string; text: string };
   errandChanged: { title: string };
   lifeSound: Vec3Like & { kind: LifeSound };

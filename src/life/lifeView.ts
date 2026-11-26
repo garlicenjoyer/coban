@@ -1,3 +1,4 @@
+import { vehicleSpecs, type VehicleKind } from './roadVehicle';
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { ShepherdFootwork } from '../player/shepherdFootwork';
@@ -33,6 +34,8 @@ class ResidentPose {
   private hips: THREE.Object3D;
   private chest: THREE.Object3D;
   private hipsHeight: number;
+  readonly person: THREE.Object3D;
+  readonly detached: boolean;
   private arms: THREE.Object3D[];
   private elbows: THREE.Object3D[];
   private legs: THREE.Object3D[];
@@ -50,7 +53,14 @@ class ResidentPose {
   private pose: GesturePose = {};
 
   constructor(resident: Resident, models: THREE.Group, private groundAt: (x: number, z: number) => number) {
-    this.root = cloneSkeleton(modelPart(models, resident.profile.model));
+    const source = modelPart(models, resident.profile.model);
+    this.detached = !!resident.vehicle;
+    this.root = cloneSkeleton(this.detached ? jointsOf(source)('Driver') : source);
+    this.person = resident.driving ? jointsOf(this.root)('Driver') : this.root;
+    if (this.detached) {
+      this.root.position.set(0, 0, 0);
+      this.root.traverse(n => { if (n instanceof THREE.Bone) n.quaternion.identity(); });
+    }
     this.root.rotation.order = 'YXZ';
     this.root.traverse((node) => {
       if (node instanceof THREE.SkinnedMesh) node.frustumCulled = false;
@@ -68,11 +78,11 @@ class ResidentPose {
     this.hands = sides.map((s) => joint(`${s} Hand`));
     this.eyes = sides.map((s) => joint(`${s} Eye`));
     this.mouth = joint('Mouth');
-    this.steering = resident.tractor ? joint('Steering Wheel') : undefined;
-    this.axles = resident.tractor ? sides.map((s) => joint(`Front ${s} Axle`)) : [];
-    this.wheels = resident.tractor ? ['Front', 'Rear'].flatMap((end) =>
+    this.steering = resident.driving ? joint('Steering Wheel') : undefined;
+    this.axles = resident.driving ? sides.map((s) => joint(`Front ${s} Axle`)) : [];
+    this.wheels = resident.driving ? ['Front', 'Rear'].flatMap((end) =>
       sides.map((s) => joint(`${end} ${s} Wheel`))) : [];
-    if (!resident.tractor) {
+    if (!resident.driving) {
       const rest = this.feet.map((foot) => this.root.worldToLocal(foot.getWorldPosition(new THREE.Vector3())));
       this.footwork = new ShepherdFootwork(rest[0], rest[1]);
       const broom = modelPart(models, 'Hand broom').clone(true);
@@ -96,13 +106,14 @@ class ResidentPose {
     this.mouth.scale.y = r.speech ? speechMouth(r.speech, r.lineAge) : face.mouth;
     const pose = r.settled ? r.destination.pose : undefined;
     this.working = lerp(this.working, r.workPose ? 1 : 0, 1 - Math.exp(-dt * 7));
-    if (r.tractor) {
+    if (r.driving) {
       const strain = Math.min(1, r.speed / 4);
       const steering = clamp(angleDelta(r.previousYaw, r.yaw) * 18, -0.38, 0.38) * strain;
       this.root.rotation.x = r.pitch + Math.sin(time * 36) * (r.parked ? 0 : 0.0024);
       this.root.rotation.z = r.roll;
       this.axles.forEach((axle) => { axle.rotation.y = steering; });
-      this.wheels.forEach((wheel, i) => { wheel.rotation.x = r.travel / (i < 2 ? 0.355 : 0.56); });
+      const specs = vehicleSpecs[r.vehicleKind];
+      this.wheels.forEach((wheel, i) => { wheel.rotation.x = r.travel / (i < 2 ? specs.frontWheel : specs.rearWheel); });
       this.chest.rotation.x = 0.11 + 0.018 * Math.sin(time * 2.1);
       this.chest.rotation.y = 0;
       this.steering!.rotation.set(1.25, 0, lerp(this.steering!.rotation.z, -steering * 1.25, 1 - Math.exp(-dt * 7)));
@@ -138,10 +149,10 @@ class ResidentPose {
     for (const channel of channels) {
       this.pose[channel] = lerp(this.pose[channel] ?? 0, (work[channel] ?? 0) * this.working + (gesture[channel] ?? 0), k);
     }
-    this.applyGesture(r.tractor);
-    if (r.tractor) this.fitDriver(clamp(this.pose.release ?? 0, 0, 1));
+    this.applyGesture(r.driving);
+    if (r.driving) this.fitDriver(r.vehicleKind, clamp(this.pose.release ?? 0, 0, 1));
     else {
-      this.plantFeet(r.speed, dt);
+      if (!r.dodging) this.plantFeet(r.speed, dt);
       if (this.tools?.broom.visible) {
         const handle = this.tools.broom.localToWorld(new THREE.Vector3(0, 0.17, 0));
         reachLimb(this.arms[0], this.elbows[0], this.hands[0], handle, new THREE.Vector3(-0.4, -1, 0).transformDirection(this.root.matrixWorld));
@@ -180,11 +191,12 @@ class ResidentPose {
     }
   }
 
-  private fitDriver(release: number): void {
+  private fitDriver(kind: VehicleKind, release: number): void {
     const orientation = this.root.getWorldQuaternion(new THREE.Quaternion());
     for (const [i, foot] of this.feet.entries()) {
       const side = i === 0 ? -1 : 1;
-      const pedal = this.root.localToWorld(new THREE.Vector3(side * 0.225, 0.766, -0.225));
+      const { seatX, seatY, seatZ } = vehicleSpecs[kind];
+      const pedal = this.root.localToWorld(new THREE.Vector3(seatX + side * 0.225, 0.766 + seatY, -0.225 + seatZ));
       reachLimb(this.legs[i], this.knees[i], foot, pedal,
         new THREE.Vector3(side * 0.30, 0.14, 1).transformDirection(this.root.matrixWorld));
       foot.quaternion.copy(foot.parent!.getWorldQuaternion(new THREE.Quaternion()).invert()).multiply(orientation);
@@ -285,6 +297,14 @@ class AnimalPose {
 export class LifeView {
   readonly root = new THREE.Group();
   private residents: ResidentPose[] = [];
+  private vehicles = new Map<Resident, { root: THREE.Object3D; wheels: THREE.Object3D[]; axles: THREE.Object3D[] }>();
+  get people() {
+    return this.residents.flatMap((pose, i) => {
+      const resident = this.currentResidents!.list[i];
+      return pose.detached === !!resident.vehicle ? [{ root: pose.person, resident }] : [];
+    });
+  }
+  private currentResidents?: Residents;
   private animals: (AnimalPose | CatPose)[] = [];
   private world?: Wildlife;
   private readonly catGroundAt: (x: number, z: number) => number;
@@ -298,6 +318,8 @@ export class LifeView {
   update(residents: Residents, wildlife: Wildlife, alpha: number, dt: number, camera: THREE.Vector3, time: number): void {
     if (this.world !== wildlife) {
       this.world = wildlife;
+      this.currentResidents = residents;
+      this.vehicles.clear();
       this.root.clear();
       this.residents = residents.list.map((resident) => new ResidentPose(resident, this.models, this.groundAt));
       this.animals = wildlife.animals.map((animal) => animal.species === 'cat'
@@ -313,7 +335,33 @@ export class LifeView {
         }
       }
     }
-    this.residents.forEach((pose, i) => pose.update(residents.list[i], alpha, dt, camera, time));
+    residents.list.forEach((r, i) => {
+      if (r.vehicle) {
+        let view = this.vehicles.get(r);
+        if (!view) {
+          const root = cloneSkeleton(modelPart(this.models, r.profile.model));
+          const joint = jointsOf(root);
+          joint('Driver').removeFromParent();
+          root.rotation.order = 'YXZ';
+          view = { root, axles: sides.map(side => joint(`Front ${side} Axle`)), wheels: ['Front', 'Rear'].flatMap(end => sides.map(side => joint(`${end} ${side} Wheel`))) };
+          this.vehicles.set(r, view);
+          this.root.add(root);
+          if (!this.residents[i].detached) {
+            this.root.remove(this.residents[i].root);
+            this.residents[i] = new ResidentPose(r, this.models, this.groundAt);
+            this.root.add(this.residents[i].root);
+          }
+        }
+        const vehicle = r.vehicle;
+        place(view.root, vehicle, alpha);
+        view.root.rotation.x = vehicle.pitch;
+        view.root.rotation.z = vehicle.roll;
+        view.axles.forEach(axle => { axle.rotation.y = vehicle.steerAngle; });
+        const specs = vehicleSpecs[vehicle.kind];
+        view.wheels.forEach((wheel, j) => { wheel.rotation.x = vehicle.travel / (j < 2 ? specs.frontWheel : specs.rearWheel); });
+      }
+      this.residents[i].update(r, alpha, dt, camera, time);
+    });
     this.animals.forEach((pose, i) => pose.update(wildlife.animals[i], alpha, dt, camera, i));
   }
 }

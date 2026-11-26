@@ -1,14 +1,10 @@
-# Çoban — greybox prototype
+# Çoban — Aegean free roam
 
 ![Çoban — an Aegean shepherd game](press/readme-banner.png)
 
 Press kit (key art, logo, cards, screenshots): [press/](press/README.md)
 
-Third-person three.js prototype of an Aegean shepherd game. Greybox milestones done:
-**M0** foundations and test map, **M1** shepherd movement, camera, crook and call,
-**M2** flock herding (24 sheep, bellwether, grazing, strays, stuck sheep, pen gate),
-**M3** the Kangal (layered AI, whistle wheel and gestures, bond, stamina, wolf encounters),
-**M4** the motorcycle (engine, traction, slides, falls, lap timer).
+Start in the village square with Karabaş and your motorcycle. Explore the valley, flag down a saloon or delivery van on the village lanes, take either farmer’s tractor, swing your cane at villagers, or ask a resident for a paid job. Villagers who spot your car or van coming jump aside. Catch one with the bumper and they tumble into a ragdoll. Honk at the checkered flags by the village entrance to race the milk road. Open **J** for activities and **M** to locate your motorcycle or the next checkpoint.
 
 ## Look and sound
 
@@ -64,8 +60,7 @@ the night up: a full moon roughly doubles how far you can see, and a moonless ni
 darkest one. Debug panel → Look: cloud shadow, cloud cover, wind strength and direction.
 
 The valley: the shepherd's **cottage** beside the ağıl (lime-washed stone, terracotta roof,
-smoking chimney, a vine pergola over a porch set for çay; **E at the door sleeps** once the
-day's tasks are done), a terraced **olive grove** behind dry-stone walls, a small **temple
+smoking chimney, a vine pergola over a porch set for çay; **E at the door sleeps until morning**), a terraced **olive grove** behind dry-stone walls, a small **temple
 ruin** in a forest clearing, cypresses, scattered pines and boulders, maquis shrubs, a stone
 **çeşme** by the pen and slow clouds.
 
@@ -104,13 +99,7 @@ clock (a driven flock covers ~650 m in a 13-minute day). Pastures sit in rings a
 ağıl: A near (118 m), D and dry C in the maquis (282 m), far B with the hut site (414 m) and
 E at the pine forest's edge in wolf country (515 m). The lookout hill (dirt road) and a
 village shell at the end of ~1.1 km of gravel road are bike country, and a dry riverbed
-(the dere) runs down the valley. Uncle Ahmet's cairns mark his old routes to D, E and B.
-
-**Uncle Ahmet's notes.** He left the paper map with his pencil marks on it (his routes,
-"no water!" by C, a question mark round E) and seven notes where you will need them: a
-letter on the çay table, then under stones by the dere spring, at his fallen hut by B, at the
-forest's edge, at the ruin, on the lookout and by dry Pasture C. **E** reads one; each adds a
-little more of his hand to the map (`src/world/valleyNotes.ts`). The journal counts them.
+(the dere) runs down the valley. Stone cairns mark the routes to D, E and B.
 
 The greybox test map is still there for tuning and the automated tests: open
 `http://localhost:5173/?map=test`. Both maps implement `MapDef` (`src/world/mapTypes.ts`);
@@ -138,10 +127,10 @@ game. The sheep, dog, wolf, and motorcycle files can be regenerated with
 In game, the full list lives in the pause menu: **Esc** (or **Start**) › **Controls**, with
 Keyboard & mouse and Gamepad tabs. The menu stops the world while it is open; Esc steps back
 a page, and from the first page it resumes. Releasing the captured mouse with Esc opens it
-too. Esc on an open card (map, note, shop, packing) closes the card first. **Options** holds
+too. Esc on an open card (map, shop, packing) closes the card first. **Options** holds
 the sound and music volumes (remembered between visits) and the developer overlay switch.
 On screen, only the action that fits the moment is prompted, one at a time (fill or pour the
-water cans, the bike's next job, a note to read, a sheep to free); the bottom hint about looking
+water cans, the bike's next job, a sheep to free); the bottom hint about looking
 around and Esc fades once it has been used.
 
 | Action | Keyboard & mouse | Gamepad |
@@ -151,7 +140,11 @@ around and Esc fades once it has been used.
 | Sprint | Shift | L3 |
 | Sneak | Ctrl or C | Light stick tilt |
 | Camera | Mouse (click the view to capture it; Esc releases it and pauses) | Right stick |
-| Crook (push cone, 6 m) | Left click | RT |
+| Swing the cane (ragdoll nearby villagers, push sheep out to 6 m) | Left click | RT |
+| Take a nearby car, van or tractor | Y | B |
+| Drive forward / brake and reverse | W / S | RT / LT |
+| Exit a road vehicle | E | Hold A |
+| Start the village sprint while mounted at the flags | H | B |
 | Call (attract, 15 m) | Right click | LT |
 | Open / close the pen gate | E (at the gate) | A |
 | Free a stuck sheep | Hold E for 2 s next to it | Hold A |
@@ -180,18 +173,6 @@ around and Esc fades once it has been used.
 | Developer panel and overlay | ` (backquote) | — |
 | Zoom | Wheel | — |
 
-## Nights
-
-Sunset is at 19:00; at 19:30 wolves howl from their den in the north-west forest (the
-compass shows where). When you sleep, the night is resolved: sheep behind a **closed gate**
-are safe if Karabaş is bonded (below bond 40, a closed pen can still lose one). Sheep left
-outside, or the whole flock if the gate is open, are exposed: wolves take a few (fewer with
-a well-bonded dog, never more than three) and the rest **scatter** away from the forest. The
-next morning starts with finding them: wolf tracks lead in from the forest, the notebook
-(J) records what happened, and Karabaş's Search (Ara) finds strays. Stay up past 20:00 and
-a wolf comes to the pen, every night. **Hush** (hold X) crouches you and freezes the sheep
-around you; hushed sheep are hard for a wolf to notice.
-
 ## On the road (ideas from Death Stranding)
 
 The journey, the flock as fragile cargo, and light combat:
@@ -204,8 +185,7 @@ The journey, the flock as fragile cargo, and light combat:
   paper map before you set out (drag).
 - **Things you build stay.** Two sites: **the shepherd's hut** west of Pasture B (with a
   dry-stone fold open to the east) and **a rain cistern** at dry Pasture C, marked with stakes
-  and string. In the valley the hut is **Uncle Ahmet's**, fallen: knee-to-chest walls, the
-  roof beams down inside, his door in the grass and the fold tumbled to heaps. Hold E at its
+  and string. The hillside hut has knee-high walls, fallen roof beams and a tumbled fold. Hold E at its
   doorway to **mend** it; the new walls rise from his and the rubble is used up. Hold E at the stakes to build; in-game time runs eight times faster while you work (the
   hut costs three hours of daylight), and the flock is on its own meanwhile. Sleep at the hut
   door with the flock in the fold and they are as safe as in the pen; the cistern collects 60 L
@@ -229,9 +209,6 @@ The journey, the flock as fragile cargo, and light combat:
   also turns a flock from afar. Karabaş can be **bitten** charging a wolf and limps until
   salved or rested (a well-bonded dog heals faster). Sheep left out at night may come back
   **bitten** rather than taken.
-- **Day 4, the far pasture:** pack for the route, take the flock to Pasture B, build the hut
-  (in the valley, mend his), fold them and sleep out there. Later days are free: graze well, keep everyone safe.
-
 ## The field kit (no HUD)
 
 Information lives on the shepherd's things: the **pocket watch** (hold T) shows the time,
@@ -240,47 +217,8 @@ with the evening marked on the dial, and ticks audibly from golden hour to sunse
 **tesbih** (prayer beads, one per sheep; dark = inside the pen) shows near the ağıl and
 clicks as sheep pass the gate. The **paper map** (M) is a hand-drawn sheet of the valley,
 contours from the real terrain, with live pencil notes: pastures hatched as they are grazed
-("let it rest"), "wolves" once you have heard them, a circle round the current task's
-destination, and your own marks. There is no "you are here" dot (assist toggle under
-**View** in the developer panel). The developer panel, stats and text overlay are hidden
+("let it rest"), "wolves" once you have heard them, your motorcycle, activity destinations, and your own marks. The player marker can be toggled under **View** in the developer panel. The developer panel, stats and text overlay are hidden
 by default; backquote shows them.
-
-## Day 1 (tasks)
-
-The paper note at the top left is your task for the day: what to do, how (with the
-controls), live progress, and where to go as distance + direction (the arrow is relative to
-your camera, the compass word to the map). **J** opens the notebook with the whole day;
-**`** (backquote) hides the debug overlay. Tasks are checked from the world, so any way of doing them
-counts, and doing something early ticks it off.
-
-1. Open the pen gate · 2. Lead the flock out · 3. Take it to Pasture A · 4. Let it graze an hour ·
-5. Pet Karabaş · 6. Have him gather the flock · 7. Leave the flock with him (Hold) and walk 50 m
-away · 8. Find the missing ewe · 9. Free her from the thorns · 10. Bring her back ·
-11. Keep the flock safe from a wolf · 12. Everyone home and the gate closed before 19:00.
-
-The first night watch starts at **20:00** on Day 1. If you finish early, press **E**
-at the cottage door (or **N**) to rest until dark. A wolf probes the pen, and Karabaş
-barks and moves to defend the flock on his own. Use **F** (D-pad up) to light the lantern.
-Once the wolf retreats, use the same rest control to sleep.
-The sky and lighting follow the in-game clock. At 18:00, three descending bell notes
-and a message cue golden hour. At 19:00 the notebook records how many sheep are safely
-inside the closed pen. If the gate is open, it shows how many were inside but unsecured.
-Resting through sunset uses the pen state at bedtime for the sunset tally.
-
-**Day 2 — the motorcycle** (sleep after Day 1, or start it from the debug panel):
-get on · kick-start · ride to the loop · one lap · a lap under 2:00 without falling · up the
-hill on the dirt road · try the muddy flank · scout Pasture C · park 25 m from the sheep and walk in.
-
-Debug panel → **Day tasks**: restart Day 1, start Day 2, skip a task. The M2 trial and M3 test
-setups pause the tasks while they run.
-
-**Day 3 — water.** Sheep get thirsty as time passes, faster around midday. They pant
-and seek nearby water when calm. The çeşme and its pen trough provide water at home,
-and Pastures A and B have springs. Pasture C is dry. Lead the flock to a spring and
-step back while they drink, or park the bike near a spring or the çeşme and press **R**
-(**RB**) beside it to fill two 20 L cans. Park at C, stand on clear ground beside the bike,
-and press **R** once per can to pour into a folding basin. As sheep drink, its supply runs down.
-Both routes count toward Day 3. Use **Day tasks → Start Day 3 (water)** to try it directly.
 
 ## The village and the purse (feature 6, first slice)
 
@@ -333,14 +271,9 @@ Both routes count toward Day 3. Use **Day tasks → Start Day 3 (water)** to try
   15%.
 - Not in 1.0: lambs and the weekly market (spring only), the sidecar.
 
-## Saving (6b)
+## Saving
 
-The game saves itself at every dawn (after you sleep) in the browser's storage, and loads it the
-next time you open the page: the purse and supplies, upgrades, cheese and finds, the flock (who is
-left, how they are, where they slept), Karabaş and his care, the bike and its wear, the grass and
-worn paths, what you built, the cistern, the notes read, the signs seen, the satchel and last
-night's report (`src/core/save.ts`, about 1 MB in the valley). Open `?new` to start fresh; the debug
-panel's **Save** folder can save now or forget the save.
+Free roam checkpoints your world when you leave, rest, finish a race or advance an errand. Parked cars, vans and tractors, your motorcycle, inventory, completed jobs and sprint record carry over. A previous campaign save supplies the starting world for the first free-roam session. New checkpoints use a separate slot for each map. Open `?new` for a fresh valley.
 
 ## The motorcycle
 
@@ -367,7 +300,7 @@ road:
 
 | Part | Wears from | Symptom | Fix: hold R at the parked bike |
 | --- | --- | --- | --- |
-| Fuel (6 L tank, about 15 km in the valley) | distance, idling | sputters, then dies | at home: pour from the jerrycan and shake in the oil (4 s; Uncle Ahmet's drum holds 30 L) |
+| Fuel (6 L tank, about 15 km in the valley) | distance, idling | sputters, then dies | at home: pour from the jerrycan and shake in the oil (4 s; the drum holds 30 L) |
 | Spark plug | riding, idling, kicks | misfires (worse at golden hour), takes several kicks | unscrew, wire-brush, re-gap (6 s) |
 | Carburettor | dust on gravel and dirt | weak pull, stalls at idle | blow the jet clean (10 s) |
 | Tyre | thorns in the maquis, rocks | slow leak, wobble, then flat (a 12 km/h crawl) | find the hole, patch, pump (15 s) |
@@ -413,7 +346,7 @@ alert bark → stands between wolf and flock → charges (never more than 60 m f
 **Care (feature 5, `src/dog/care.ts`).** Karabaş gets hungry (−4/h, twice as fast running) and
 thirsty (−6/h, twice as fast in the midday heat). Hungry, he gets his wind back at half speed;
 thirsty, he won't run. Left to himself he drinks at any trough, spring, cistern or basin within
-60 m and goes to his bowl when it has food in it. Fill the bowl on the porch with E (Uncle Ahmet's
+60 m and goes to his bowl when it has food in it. Fill the bowl on the porch with E (the
 sack by the woodpile holds 14 meals) or feed him **bread and yoghurt** from the satchel. Moving
 through maquis and pines he picks up **ticks** (up to 5, each −5% stamina); hold E beside him and
 he lies still while you pick them off. Each night costs bond if you didn't pet him that day, if

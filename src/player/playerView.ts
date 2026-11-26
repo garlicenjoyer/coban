@@ -1,3 +1,4 @@
+import { vehicleSpecs } from '../life/roadVehicle';
 import * as THREE from 'three';
 import type { BikeView } from '../bike/bikeView';
 import { SIM_DT } from '../core/config';
@@ -6,7 +7,7 @@ import { commandInfo } from '../dog/commands';
 import type { Sim } from '../sim';
 import { LanternView } from './lanternView';
 import { modelPart } from '../render/gameModel';
-import { MotorcycleRider } from './motorcycleRider';
+import { MotorcycleRider, type RiderPose } from './motorcycleRider';
 import { MotorcycleIncident } from './motorcycleIncident';
 import { StationWork, type WorkStations } from './stationWork';
 import { KICK_DURATION, KICK_IMPACT } from '../bike/kickMotion';
@@ -34,6 +35,12 @@ export class PlayerView {
   /** Interpolated feet position, for the camera. */
   readonly renderPos = new THREE.Vector3();
   private readonly rider: MotorcycleRider;
+  private readonly vehicleFrame = new THREE.Group();
+  private readonly vehiclePose: RiderPose = {
+    seat: 1, grips: [new THREE.Object3D(), new THREE.Object3D()], hands: [1, 1],
+    boots: [new THREE.Vector3(), new THREE.Vector3()], feet: [1, 1], bootPitch: [0, 0],
+    lean: 0, dab: 0, kick: 0, legSwing: [0, 0], look: 0, headRoll: 0, weightShift: 0,
+  };
   private readonly work: StationWork;
   private readonly incident: MotorcycleIncident;
   private readonly previousVisualPosition = new THREE.Vector3();
@@ -57,6 +64,7 @@ export class PlayerView {
     private readonly playKick: (success: boolean) => void = () => {},
   ) {
     this.root.add(rig.model);
+    this.vehicleFrame.add(...this.vehiclePose.grips);
     scene.add(this.root);
     this.lantern = new LanternView(scene, fieldProps);
     this.salve = modelPart(fieldProps, 'Wound salve').clone();
@@ -200,14 +208,27 @@ export class PlayerView {
     this.bikeView.setKick(kickPhase);
 
     const stepping = this.rider.onFootTransition;
-    const rider = this.rider.update(this.root, bike, dt, riding, this.incident.crashSeat, weightShift, kickPhase);
-    const incident = this.incident.update(this.root, this.renderPos, yaw + this.lookOffset, bike, dt);
+    let rider = this.rider.update(this.root, bike, dt, bike.rider, this.incident.crashSeat, weightShift, kickPhase);
+    const vehicle = this.sim.drivenVehicle;
+    if (vehicle) {
+      const frame = this.vehicleFrame;
+      const { seatX, seatY, seatZ } = vehicleSpecs[vehicle.kind];
+      this.vehiclePose.grips.forEach((grip, i) => grip.position.set(seatX + (i ? -0.16 : 0.16), 1.25 + seatY, -0.14 + seatZ));
+      frame.position.set(lerp(vehicle.px, vehicle.x, alpha), lerp(vehicle.py, vehicle.y, alpha), lerp(vehicle.pz, vehicle.z, alpha));
+      frame.rotation.set(vehicle.pitch, lerp(vehicle.previousYaw, vehicle.yaw, alpha), vehicle.roll, 'YXZ');
+      this.root.position.copy(frame.localToWorld(new THREE.Vector3(seatX, 0.14 + seatY, -0.56 + seatZ)));
+      this.root.quaternion.copy(frame.quaternion);
+      this.root.rotateY(Math.PI);
+      this.vehiclePose.boots.forEach((boot, i) => frame.localToWorld(boot.set(seatX + (i ? -0.24 : 0.24), 0.73 + seatY, -0.19 + seatZ)));
+      rider = this.vehiclePose;
+    }
+    const incident = vehicle ? undefined : this.incident.update(this.root, this.renderPos, yaw + this.lookOffset, bike, dt);
     const work = this.work.update(this.root, dt, speed, !riding && !rider && !incident);
     const transitionSpeed = Math.hypot(this.root.position.x - this.previousVisualPosition.x,
       this.root.position.z - this.previousVisualPosition.z) / Math.max(dt, 1 / 240);
     this.previousVisualPosition.copy(this.root.position);
     if (rider || incident || work) this.renderPos.copy(this.root.position);
-    if (riding && rider) this.renderPos.lerp(this.bikeView.renderPos, smoothstep(rider.seat, 0.72, 1));
+    if (bike.rider && rider) this.renderPos.lerp(this.bikeView.renderPos, smoothstep(rider.seat, 0.72, 1));
     const speedOnFoot = stepping ? Math.min(1.6, transitionSpeed) : riding || incident || work ? 0 : Math.min(speed, p.speed);
     const handsFree = !riding && !rider && !incident && !work;
     const prop = action?.kind === 'salve' ? this.salve : action?.kind === 'bread' ? this.bread : undefined;

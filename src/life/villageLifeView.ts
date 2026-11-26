@@ -7,7 +7,8 @@ import type { Layout, ResidentId } from '../world/mapTypes';
 import type { Terrain } from '../world/terrain';
 import { CAFE, CAFE_TABLES, LAUNDRY, cafePoint } from '../world/villagePlan';
 import type { ValleyProps } from '../world/valleyProps';
-import { angleDelta } from './residents';
+import type { Obstacles } from '../world/obstacles';
+import { angleDelta, witnessesTheft } from './residents';
 import { residentFace, residentGesture } from './residentAnimation';
 import { jointsOf, reachLimb } from './residentRig';
 import { planResidentSpeech, speechMouth, type ResidentSpeech } from './residentSpeech';
@@ -72,6 +73,25 @@ class Villager {
       joint(side + ' Knee').rotation.x = 1.57;
       joint(side + ' Foot').rotation.x = -0.23;
     }
+  }
+
+  dodging = false;
+  alarmAt = -Infinity;
+  alarmed(time: number, target: Vec3Like): boolean {
+    if (this.dodging) {
+      this.pose(time);
+      return true;
+    }
+    const age = time - this.alarmAt;
+    if (age < 0 || age >= 2.6) return false;
+    const local = this.root.worldToLocal(new THREE.Vector3(target.x, target.y, target.z));
+    this.pose(time, clamp(Math.atan2(local.x, local.z), -1.25, 1.25), -0.1);
+    const p = residentGesture(this.voice, 'startle', age);
+    this.arms[0].rotation.x += p.left ?? 0;
+    this.arms[1].rotation.x += p.right ?? 0;
+    this.elbows[0].rotation.x += p.leftBend ?? 0;
+    this.elbows[1].rotation.x += p.rightBend ?? 0;
+    return true;
   }
 
   pose(time: number, gaze = 0, lean = 0, lower = 0, line?: ResidentSpeech, age = 0): void {
@@ -149,7 +169,7 @@ class Clothesline {
   private readonly ground: number;
   private readonly top: (t: number) => number;
 
-  constructor(private readonly worker: Villager, props: ValleyProps, village: Village, terrain: Terrain) {
+  constructor(readonly worker: Villager, props: ValleyProps, village: Village, terrain: Terrain) {
     const { x, z, halfSpan, height } = LAUNDRY;
     const wx = village.x + x, wz = village.z + z;
     this.ground = terrain.heightAt(wx, wz);
@@ -199,7 +219,7 @@ class Clothesline {
     return cloth;
   }
 
-  update(hour: number, time: number, camera: THREE.Vector3): void {
+  update(hour: number, time: number, camera: THREE.Vector3, player: Vec3Like): void {
     this.root.visible = Math.hypot(camera.x - this.root.position.x, camera.z - this.root.position.z) < 115;
     if (!this.root.visible) return;
     this.resting.forEach((cloth, i) => { cloth.rotation.x = 0.09 * Math.sin(time * 1.6 + i * 1.3) + 0.04 * Math.sin(time * 3.9 + i); });
@@ -213,7 +233,7 @@ class Clothesline {
     this.pin.position.set(lerp(0.80, 0.50, raising), lerp(0.69, this.top(0.6), raising), lerp(0.47, 0, raising));
     this.pin.rotation.x = lerp(-Math.PI * 0.43, 0.10 * Math.sin(time * 1.8), raising);
     this.pin.rotation.z = 0.13 * (1 - raising);
-    if (!worker.root.visible) return;
+    if (!worker.root.visible || worker.alarmed(time, player)) return;
     worker.pose(time, -0.15 * (1 - raising), 0.13 + (1 - raising) * 0.57 * grip, 0.10 * grip * (1 - raising));
     for (const side of [0, 1] as const) {
       const clip = this.pin.localToWorld(new THREE.Vector3(side ? -0.21 : 0.21, 0.028, 0.035));
@@ -232,6 +252,7 @@ interface CafeSeat {
 
 export class VillageLifeView {
   readonly root = new THREE.Group();
+  get people() { return [...this.pair, ...this.seats.map(s => s.person), this.laundry.worker]; }
   private readonly cafe = new THREE.Group();
   private readonly board = new THREE.Group();
   private readonly seats: CafeSeat[];
@@ -301,12 +322,19 @@ export class VillageLifeView {
       .map((line, i) => planResidentSpeech(this.pair[i % 2].voice, line, 'explain'));
     this.cafeLines = ['Hadi İsmail, sıra sende.', 'Gördün mü zarı? Yine düştü şeş beş.']
       .map((line, i) => planResidentSpeech(this.seats[i].person.voice, line, 'explain'));
-    this.welcome = planResidentSpeech(this.seats[2].person.voice, 'Bak hele, Ahmet’in yeğeni geliyor.', 'explain');
+    this.welcome = planResidentSpeech(this.seats[2].person.voice, 'Günaydın komşu, çay hazır.', 'explain');
+  }
+
+  witnessTheft(at: Vec3Like, time: number, obstacles: Obstacles): void {
+    for (const person of this.people) {
+      if (person.root.visible && person.root.parent?.visible && witnessesTheft(person.root.getWorldPosition(new THREE.Vector3()), at, obstacles)) person.alarmAt = time;
+    }
   }
 
   update(hour: number, time: number, dt: number, player: Vec3Like, camera: THREE.Vector3, sounds: VillageSounds): void {
     if (time < this.previousTime - 0.25) {
       this.arrivedAt = -Infinity;
+      for (const person of this.people) person.alarmAt = -Infinity;
       this.approachClear = true;
     }
     const previous = time > this.previousTime && time - this.previousTime < 0.25 ? this.previousTime : time;
@@ -314,8 +342,8 @@ export class VillageLifeView {
     const near = Math.hypot(camera.x - this.cafe.position.x, camera.z - this.cafe.position.z);
     this.cafe.visible = near < 135;
     if (this.cafe.visible) this.atCafe(hour, time, previous, dt, player, sounds);
-    this.inSquare(hour, time, previous, camera, sounds);
-    this.laundry.update(hour, time, camera);
+    this.inSquare(hour, time, previous, camera, sounds, player);
+    this.laundry.update(hour, time, camera, player);
   }
 
   private atCafe(hour: number, time: number, previous: number, dt: number, player: Vec3Like, sounds: VillageSounds): void {
@@ -337,7 +365,7 @@ export class VillageLifeView {
       person.root.visible = open;
       cup.position.copy(saucer);
       cup.rotation.set(0, 0, 0);
-      if (!open) continue;
+      if (!open || person.alarmed(time, player)) continue;
       const p = person.root.getWorldPosition(new THREE.Vector3());
       const yaw = CAFE.facing + person.root.rotation.y;
       const toward = Math.atan2(player.x - p.x, player.z - p.z);
@@ -386,13 +414,13 @@ export class VillageLifeView {
     }
   }
 
-  private inSquare(hour: number, time: number, previous: number, camera: THREE.Vector3, sounds: VillageSounds): void {
+  private inSquare(hour: number, time: number, previous: number, camera: THREE.Vector3, sounds: VillageSounds, player: Vec3Like): void {
     const cycle = (time + 5) % 17;
     const offsets = [1.0, 3.5, 7.2];
     for (const [index, person] of this.pair.entries()) {
       const p = person.root.position;
       person.root.visible = hour >= 6.6 && hour < 19.6 && Math.hypot(camera.x - p.x, camera.z - p.z) < 100;
-      if (!person.root.visible) continue;
+      if (!person.root.visible || person.alarmed(time, player)) continue;
       const turn = offsets.findIndex((start, i) => i % 2 === index && cycle >= start && cycle - start < this.streetLines[i].duration);
       const line = this.streetLines[turn];
       const age = line ? cycle - offsets[turn] : 0;
